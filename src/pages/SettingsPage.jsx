@@ -1,0 +1,341 @@
+import { useRef, useState } from 'react';
+import { Plus, X, Edit2, Check, Trash2, Download, Upload } from 'lucide-react';
+import { useStore } from '../store/useStore';
+import { fmtMoney } from '../utils/calculations';
+import { INSTRUMENTS } from '../utils/instruments';
+
+function NumberField({ value, onChange, placeholder, prefix = '$' }) {
+  return (
+    <div className="flex items-center gap-1 bg-bg border border-bg-border rounded px-2 py-1 focus-within:border-accent-green/50">
+      {prefix && <span className="text-text-muted text-xs">{prefix}</span>}
+      <input
+        type="number"
+        value={value ?? ''}
+        onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        placeholder={placeholder}
+        className="bg-transparent text-sm font-mono w-full focus:outline-none"
+      />
+    </div>
+  );
+}
+
+const COLOR_DOT = {
+  green: 'bg-accent-green', red: 'bg-accent-red', yellow: 'bg-accent-yellow',
+  blue: 'bg-accent-blue', muted: 'bg-text-secondary'
+};
+
+function CategoryRow({ cat, colors, onPatch, onRemove, onAddTag, onRemoveTag }) {
+  const [draftTag, setDraftTag] = useState('');
+  function commitTag() {
+    if (!draftTag.trim()) return;
+    onAddTag(draftTag);
+    setDraftTag('');
+  }
+  return (
+    <div className="card p-3 space-y-2.5">
+      <div className="flex items-center gap-2">
+        <span className={`w-2.5 h-2.5 rounded-full ${COLOR_DOT[cat.color] || COLOR_DOT.muted}`} />
+        <input
+          value={cat.label}
+          onChange={e => onPatch({ label: e.target.value })}
+          className="flex-1 bg-transparent text-sm font-medium border-b border-transparent hover:border-bg-border focus:outline-none focus:border-accent-green/50 px-1 py-0.5"
+        />
+        <select
+          value={cat.color}
+          onChange={e => onPatch({ color: e.target.value })}
+          className="bg-bg border border-bg-border rounded px-2 py-0.5 text-[11px] focus:outline-none"
+        >
+          {colors.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <button onClick={onRemove} className="text-text-muted hover:text-accent-red p-1">
+          <Trash2 size={12} />
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {(cat.tags || []).map(t => (
+          <span key={t.id} className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] bg-bg-hover rounded border border-bg-border">
+            {t.label}
+            <button onClick={() => onRemoveTag(t.id)} className="text-text-muted hover:text-accent-red ml-0.5">
+              <X size={9} />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={draftTag}
+          onChange={e => setDraftTag(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && commitTag()}
+          placeholder={`Add tag to ${cat.label}…`}
+          className="flex-1 bg-bg border border-bg-border rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-green/50"
+        />
+        <button
+          onClick={commitTag}
+          disabled={!draftTag.trim()}
+          className="px-2.5 py-1 text-[11px] bg-accent-green text-bg rounded font-medium disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AccountRow({ account, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(account);
+
+  function save() { onSave(draft); setEditing(false); }
+  function cancel() { setDraft(account); setEditing(false); }
+
+  if (!editing) {
+    return (
+      <div className="card p-4 group">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="font-medium">{account.firm_name}</div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2 text-xs font-mono text-text-secondary">
+              <div>Size <span className="text-text-primary">{fmtMoney(account.account_size)}</span></div>
+              <div>Trail DD <span className="text-text-primary">{fmtMoney(account.trailing_drawdown_limit)}</span></div>
+              <div>Daily Loss <span className="text-text-primary">{fmtMoney(account.daily_loss_limit)}</span></div>
+              <div>Balance <span className="text-text-primary">{fmtMoney(account.current_balance)}</span></div>
+              <div>EOD <span className="text-text-primary">{account.eod_rule ? 'Yes' : 'No'}</span></div>
+            </div>
+          </div>
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => setEditing(true)} className="p-1 text-text-secondary hover:text-text-primary">
+              <Edit2 size={14} />
+            </button>
+            <button onClick={() => onDelete(account.id)} className="p-1 text-text-secondary hover:text-accent-red">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-4 space-y-3 border-accent-green/30">
+      <input
+        value={draft.firm_name}
+        onChange={e => setDraft({ ...draft, firm_name: e.target.value })}
+        placeholder="Firm name"
+        className="w-full bg-bg border border-bg-border rounded px-3 py-2 text-sm font-medium focus:outline-none focus:border-accent-green/50"
+      />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Account size</div>
+          <NumberField value={draft.account_size} onChange={v => setDraft({ ...draft, account_size: v })} />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Trail drawdown</div>
+          <NumberField value={draft.trailing_drawdown_limit} onChange={v => setDraft({ ...draft, trailing_drawdown_limit: v })} />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Daily loss limit</div>
+          <NumberField value={draft.daily_loss_limit} onChange={v => setDraft({ ...draft, daily_loss_limit: v })} />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Current balance</div>
+          <NumberField value={draft.current_balance} onChange={v => setDraft({ ...draft, current_balance: v })} />
+        </div>
+      </div>
+      <label className="flex items-center gap-2 text-xs text-text-secondary">
+        <input
+          type="checkbox"
+          checked={!!draft.eod_rule}
+          onChange={e => setDraft({ ...draft, eod_rule: e.target.checked })}
+          className="accent-accent-green"
+        />
+        EOD drawdown rule
+      </label>
+      <div className="flex justify-end gap-2">
+        <button onClick={cancel} className="px-3 py-1 text-xs text-text-secondary hover:text-text-primary">Cancel</button>
+        <button onClick={save} className="px-3 py-1 text-xs bg-accent-green text-bg rounded font-medium">Save</button>
+      </div>
+    </div>
+  );
+}
+
+export default function SettingsPage() {
+  const accounts = useStore(s => s.accounts);
+  const settings = useStore(s => s.settings);
+  const addAccount    = useStore(s => s.addAccount);
+  const updateAccount = useStore(s => s.updateAccount);
+  const deleteAccount = useStore(s => s.deleteAccount);
+  const updateSettings = useStore(s => s.updateSettings);
+  const exportData = useStore(s => s.exportData);
+  const importData = useStore(s => s.importData);
+
+  const fileRef = useRef(null);
+  const [importMsg, setImportMsg] = useState('');
+
+  function downloadJson() {
+    const blob = new Blob([exportData()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `trading-dashboard-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        importData(e.target.result);
+        setImportMsg('Imported.');
+        setTimeout(() => setImportMsg(''), 2000);
+      } catch (err) {
+        setImportMsg('Import failed: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  const categories = settings.tag_categories || [];
+  function setCategories(next) { updateSettings({ tag_categories: next }); }
+  const COLORS = ['green', 'red', 'yellow', 'blue', 'muted'];
+  const newId = () => Math.random().toString(36).slice(2, 10);
+
+  function addCategory() {
+    setCategories([
+      ...categories,
+      { id: newId(), label: 'New category', color: 'muted', tags: [] }
+    ]);
+  }
+  function patchCategory(catId, patch) {
+    setCategories(categories.map(c => c.id === catId ? { ...c, ...patch } : c));
+  }
+  function removeCategory(catId) {
+    if (!confirm('Delete this category and all its tags? Tags applied to trades will be cleared.')) return;
+    setCategories(categories.filter(c => c.id !== catId));
+  }
+  function addTagToCategory(catId, label) {
+    const text = label.trim();
+    if (!text) return;
+    setCategories(categories.map(c =>
+      c.id === catId
+        ? { ...c, tags: [...(c.tags || []), { id: newId(), label: text }] }
+        : c
+    ));
+  }
+  function removeTagFromCategory(catId, tagId) {
+    setCategories(categories.map(c =>
+      c.id === catId ? { ...c, tags: c.tags.filter(t => t.id !== tagId) } : c
+    ));
+  }
+
+  function addNewAccount() {
+    addAccount({
+      firm_name: 'New account',
+      account_size: 50000,
+      trailing_drawdown_limit: 2000,
+      daily_loss_limit: 1500,
+      eod_rule: false,
+      current_balance: 50000
+    });
+  }
+
+  return (
+    <div className="p-6 space-y-6 max-w-4xl">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <p className="text-sm text-text-secondary mt-1">Account rules, tags, instruments, and backups.</p>
+      </div>
+
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm uppercase tracking-wider text-text-secondary">Prop Firm Accounts</h2>
+          <button
+            onClick={addNewAccount}
+            className="flex items-center gap-1 text-xs text-accent-green hover:text-accent-green-soft"
+          >
+            <Plus size={12} /> Add account
+          </button>
+        </div>
+        <div className="space-y-2">
+          {accounts.map(a => (
+            <AccountRow
+              key={a.id}
+              account={a}
+              onSave={(patch) => updateAccount(a.id, patch)}
+              onDelete={(id) => { if (confirm(`Delete account "${a.firm_name}"?`)) deleteAccount(id); }}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm uppercase tracking-wider text-text-secondary">Tag Categories</h2>
+          <button
+            onClick={addCategory}
+            className="flex items-center gap-1 text-xs text-accent-green hover:text-accent-green-soft"
+          >
+            <Plus size={12} /> Add category
+          </button>
+        </div>
+        <p className="text-xs text-text-muted mb-3">
+          Group tags into categories — Setups, Mistakes, Exit/TP, Timeframe, Confidence. Each trade can have multiple tags per category.
+        </p>
+        <div className="space-y-3">
+          {categories.map(cat => (
+            <CategoryRow
+              key={cat.id}
+              cat={cat}
+              colors={COLORS}
+              onPatch={(patch) => patchCategory(cat.id, patch)}
+              onRemove={() => removeCategory(cat.id)}
+              onAddTag={(label) => addTagToCategory(cat.id, label)}
+              onRemoveTag={(tagId) => removeTagFromCategory(cat.id, tagId)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Instruments</h2>
+        <div className="card p-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 text-xs font-mono">
+          {Object.entries(INSTRUMENTS).map(([k, v]) => (
+            <div key={k} className="flex justify-between border border-bg-border rounded px-2 py-1.5">
+              <span className="font-semibold">{k}</span>
+              <span className="text-text-secondary">${v.pointValue}/pt</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Backup</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={downloadJson}
+            className="flex items-center gap-1.5 px-4 py-2 bg-accent-green text-bg rounded text-sm font-medium hover:bg-accent-green-soft"
+          >
+            <Download size={14} /> Export JSON
+          </button>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="flex items-center gap-1.5 px-4 py-2 border border-bg-border text-text-secondary hover:text-text-primary rounded text-sm"
+          >
+            <Upload size={14} /> Import JSON
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={e => e.target.files?.[0] && handleImportFile(e.target.files[0])}
+          />
+          {importMsg && <span className="self-center text-xs text-accent-green">{importMsg}</span>}
+        </div>
+        <p className="text-xs text-text-muted mt-2">
+          Export saves all data to JSON for OneDrive backup. Import replaces current data.
+        </p>
+      </section>
+    </div>
+  );
+}

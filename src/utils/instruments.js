@@ -1,0 +1,40 @@
+export const INSTRUMENTS = {
+  NQ:  { name: 'Nasdaq-100',   pointValue: 20 },
+  MNQ: { name: 'Micro Nasdaq', pointValue: 2 },
+  ES:  { name: 'S&P 500',      pointValue: 50 },
+  MES: { name: 'Micro S&P',    pointValue: 5 },
+  RTY: { name: 'Russell 2000', pointValue: 50 },
+  M2K: { name: 'Micro Russell',pointValue: 5 },
+  YM:  { name: 'Dow',          pointValue: 5 },
+  MYM: { name: 'Micro Dow',    pointValue: 0.5 },
+  GC:  { name: 'Gold',         pointValue: 100 },
+  MGC: { name: 'Micro Gold',   pointValue: 10 },
+  SI:  { name: 'Silver',       pointValue: 5000 },
+  SIL: { name: 'Mini Silver',  pointValue: 1000 },
+  CL:  { name: 'Crude Oil',    pointValue: 1000 },
+  MCL: { name: 'Micro Crude',  pointValue: 100 },
+  ZS:  { name: 'Soybeans',     pointValue: 50 },
+  ZC:  { name: 'Corn',         pointValue: 50 },
+  ZW:  { name: 'Wheat',        pointValue: 50 }
+};
+
+export const TICKERS = Object.keys(INSTRUMENTS);
+
+export function pointValue(ticker) {
+  return INSTRUMENTS[ticker]?.pointValue ?? 1;
+}
+
+// Ordered longest-first so prefix matching prefers micros and multi-letter roots.
+const TICKER_PREFIXES = [
+  'MNQ', 'MGC', 'MCL', 'MES', 'MYM', 'M2K', 'SIL',
+  'NQ', 'ES', 'GC', 'CL', 'YM', 'ZS', 'ZC', 'ZW', 'SI', 'RTY'
+];
+
+export function tickerFromSymbol(symbol) {
+  if (!symbol) return symbol;
+  const s = symbol.toUpperCase();
+  for (const p of TICKER_PREFIXES) {
+    if (s.startsWith(p)) return p;
+  }
+  return s;
+}
