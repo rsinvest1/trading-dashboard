@@ -5,6 +5,7 @@ import StreakBadge from '../components/StreakBadge';
 import PropFirmRiskBar from '../components/PropFirmRiskBar';
 import TendenciesSection from '../components/TendenciesSection';
 import StrengthsPanel from '../components/StrengthsPanel';
+import InSessionControlPanel from '../components/InSessionControlPanel';
 import PnlByTickerChart from '../components/charts/PnlByTickerChart';
 import DayOfWeekChart from '../components/charts/DayOfWeekChart';
 import IntradayHeatmap from '../components/charts/IntradayHeatmap';
@@ -115,6 +116,11 @@ export default function DashboardPage() {
         <StreakBadge streaks={stats.sk} />
         <StatCard label="Today's P&L" value={fmtMoney(todayPnL)} tone={tone(todayPnL)} />
         <StatCard label="Period" value={PERIODS.find(p => p.id === period).label} sub="Adjust above" mono={false} />
+      </section>
+
+      <section>
+        <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Behavior Engine</h2>
+        <InSessionControlPanel />
       </section>
 
       <section>

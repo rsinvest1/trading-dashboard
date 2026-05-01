@@ -9,6 +9,7 @@ export default function CsvImporter({ onClose }) {
   const accounts = useStore(s => s.accounts);
   const existingTrades = useStore(s => s.trades);
   const addTrades = useStore(s => s.addTrades);
+  const ingestTrade = useStore(s => s.ingestTrade);
 
   const [stage, setStage] = useState('idle'); // idle | parsed | imported
   const [rawTrades, setRawTrades] = useState([]);
@@ -17,6 +18,9 @@ export default function CsvImporter({ onClose }) {
   const [errors, setErrors] = useState([]);
   const [stats, setStats] = useState({ fills: 0, trades: 0, dupes: 0, fresh: 0 });
   const [filename, setFilename] = useState('');
+  // Live mode: each fresh trade goes through the Behavior Engine
+  // (auto-on when all fresh trades are from today)
+  const [liveMode, setLiveMode] = useState(false);
 
   function handleFile(file) {
     setFilename(file.name);
@@ -51,6 +55,10 @@ export default function CsvImporter({ onClose }) {
       dupes: dupes.length,
       fresh: fresh.length
     });
+    // Auto-suggest live mode if every fresh trade is from today
+    const today = new Date().toISOString().slice(0, 10);
+    const allToday = fresh.length > 0 && fresh.every(t => t.date === today);
+    setLiveMode(allToday);
     setStage('parsed');
   }
 
@@ -59,7 +67,13 @@ export default function CsvImporter({ onClose }) {
       const { account_id_raw, ...rest } = t;
       return { ...rest, account_id: accountMap[account_id_raw] ?? null };
     });
-    addTrades(mapped);
+    if (liveMode) {
+      // Push each through the Behavior Engine — this triggers
+      // the post-trade modal sequentially via pending_classification_id
+      for (const t of mapped) ingestTrade(t);
+    } else {
+      addTrades(mapped);
+    }
     setStage('imported');
   }
 
@@ -173,6 +187,24 @@ export default function CsvImporter({ onClose }) {
                 </div>
               )}
 
+              {stats.fresh > 0 && (
+                <label className="flex items-start gap-2 p-3 rounded border border-bg-border bg-bg-hover/30 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={liveMode}
+                    onChange={e => setLiveMode(e.target.checked)}
+                    className="mt-0.5 accent-accent-green"
+                  />
+                  <div>
+                    <div className="text-sm font-medium">Live mode — classify each trade now</div>
+                    <div className="text-[11px] text-text-muted mt-0.5">
+                      Each new trade triggers the Plan/Error + emotion modal and feeds the Behavior Engine
+                      (pause / kill switch / recovery). Recommended when importing today's trades.
+                    </div>
+                  </div>
+                </label>
+              )}
+
               <div className="flex justify-end gap-2 pt-2">
                 <button onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">Cancel</button>
                 <button
@@ -182,7 +214,9 @@ export default function CsvImporter({ onClose }) {
                 >
                   {stats.fresh === 0
                     ? 'Nothing new to import'
-                    : `Import ${stats.fresh} new trade${stats.fresh === 1 ? '' : 's'}`}
+                    : liveMode
+                      ? `Import & classify ${stats.fresh} trade${stats.fresh === 1 ? '' : 's'}`
+                      : `Import ${stats.fresh} new trade${stats.fresh === 1 ? '' : 's'}`}
                 </button>
               </div>
             </>

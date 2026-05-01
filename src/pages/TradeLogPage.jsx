@@ -3,6 +3,7 @@ import { Upload, Trash2, ArrowUpDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import CsvImporter from '../components/CsvImporter';
 import TradeDetailDrawer from '../components/TradeDetailDrawer';
+import QuickAddTrade from '../components/QuickAddTrade';
 import { fmtMoney, fmtR, realizedR } from '../utils/calculations';
 
 const COLS = [
@@ -149,9 +150,10 @@ export default function TradeLogPage() {
               <Trash2 size={14} /> Clear
             </button>
           )}
+          <QuickAddTrade />
           <button
             onClick={() => setImporting(true)}
-            className="flex items-center gap-1 px-3 py-2 text-sm bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
+            className="flex items-center gap-1 px-3 py-2 text-sm border border-bg-border text-text-primary rounded font-medium hover:border-accent-green/40"
           >
             <Upload size={14} /> Import CSV
           </button>

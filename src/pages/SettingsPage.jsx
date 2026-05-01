@@ -24,6 +24,88 @@ const COLOR_DOT = {
   blue: 'bg-accent-blue', muted: 'bg-text-secondary'
 };
 
+function BehaviorSettingsSection() {
+  const cfg = useStore(s => s.settings.behavior);
+  const updateSettings = useStore(s => s.updateSettings);
+  const overrideLog = useStore(s => s.overrideLog || []);
+  const resetBehavior = useStore(s => s.resetBehaviorState);
+
+  function patch(p) { updateSettings({ behavior: { ...cfg, ...p } }); }
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm uppercase tracking-wider text-text-secondary">Behavior Engine</h2>
+      <p className="text-xs text-text-muted">
+        Tune how the system pauses, locks, and recovers from emotional trading.
+      </p>
+
+      <div className="card p-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+        <NumField label="Pause after error (min)"
+          value={cfg.pause_minutes} onChange={v => patch({ pause_minutes: v })} />
+        <NumField label="Kill: consecutive errors"
+          value={cfg.kill_consecutive_errors} onChange={v => patch({ kill_consecutive_errors: v })} />
+        <NumField label="Kill: lock duration (min)"
+          value={cfg.kill_lock_minutes} onChange={v => patch({ kill_lock_minutes: v })} />
+        <NumField label="Kill: post-error trades"
+          value={cfg.kill_post_error_count} onChange={v => patch({ kill_post_error_count: v })} />
+        <NumField label="Kill: window (min)"
+          value={cfg.kill_post_error_window_min} onChange={v => patch({ kill_post_error_window_min: v })} />
+        <NumField label="Impulsive trade window (sec)"
+          value={cfg.impulsive_window_sec} onChange={v => patch({ impulsive_window_sec: v })} />
+        <NumField label="Recovery max trades/hr"
+          value={cfg.recovery_max_trades_per_hour} onChange={v => patch({ recovery_max_trades_per_hour: v })} />
+        <NumField label="Recovery exit: calm streak"
+          value={cfg.recovery_calm_streak_to_exit} onChange={v => patch({ recovery_calm_streak_to_exit: v })} />
+        <NumField label="Recovery exit: idle (min)"
+          value={cfg.recovery_idle_minutes_to_exit} onChange={v => patch({ recovery_idle_minutes_to_exit: v })} />
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          onClick={() => { if (confirm('Reset Behavior Engine state? Clears pause/lock and counters.')) resetBehavior(); }}
+          className="text-xs text-text-muted hover:text-accent-yellow underline"
+        >
+          Reset behavior state (start fresh)
+        </button>
+      </div>
+
+      {overrideLog.length > 0 && (
+        <div>
+          <h3 className="text-[11px] uppercase tracking-wider text-accent-red mb-2 mt-4">
+            Override log — {overrideLog.length} bypass{overrideLog.length === 1 ? '' : 'es'}
+          </h3>
+          <div className="card p-3 space-y-1.5 max-h-64 overflow-auto">
+            {[...overrideLog].reverse().map(o => (
+              <div key={o.id} className="text-xs flex items-start gap-2 border-b border-bg-border last:border-0 pb-1.5 last:pb-0">
+                <span className="text-text-muted font-mono shrink-0">
+                  {new Date(o.at).toLocaleString()}
+                </span>
+                <span className="text-accent-red font-semibold uppercase text-[10px] mt-0.5">{o.previous_mode}</span>
+                <span className="text-text-secondary flex-1">{o.note}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function NumField({ label, value, onChange }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">{label}</div>
+      <input
+        type="number"
+        min="0"
+        value={value ?? 0}
+        onChange={e => onChange(Number(e.target.value) || 0)}
+        className="w-full bg-bg border border-bg-border rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-accent-green/50"
+      />
+    </div>
+  );
+}
+
 function CategoryRow({ cat, colors, onPatch, onRemove, onAddTag, onRemoveTag }) {
   const [draftTag, setDraftTag] = useState('');
   function commitTag() {
@@ -295,6 +377,8 @@ export default function SettingsPage() {
           ))}
         </div>
       </section>
+
+      <BehaviorSettingsSection />
 
       <section>
         <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Instruments</h2>

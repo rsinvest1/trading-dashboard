@@ -8,6 +8,13 @@ const DEFAULT_BEHAVIOR_TAGS = [
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
+// True if `iso` is within `minutes` of now (used by Behavior Engine windows).
+function withinMinutes(iso, minutes) {
+  if (!iso) return false;
+  const diff = (Date.now() - new Date(iso).getTime()) / 60_000;
+  return diff <= minutes;
+}
+
 // ── Default tag taxonomy (replaces flat behavior_tags) ──────────────────
 function defaultTagCategories() {
   return [
@@ -88,7 +95,49 @@ function tradeDefaults() {
     playbook_id: null,
     screenshot: null,
     execution_rating: null,
-    notes: null
+    notes: null,
+    // ── Behavior Engine fields (v2) ───────────────────────────────────
+    trade_type: null,          // 'plan' | 'error' | null until classified
+    post_trade_state: null,    // 'calm' | 'neutral' | 'frustrated' | 'urgent'
+    error_reason: null,        // freeform text after error
+    error_emotion: null,       // 'frustration' | 'urgency' | 'fomo' | 'anger'
+    is_post_error_trade: false,
+    time_since_last_trade_sec: null,
+    impulsive_trade_flag: false,
+    classified_at: null
+  };
+}
+
+// ── Default Behavior Engine settings ────────────────────────────────────
+function defaultBehaviorSettings() {
+  return {
+    pause_minutes: 5,           // mandatory pause after error
+    kill_lock_minutes: 45,      // length of full lock
+    kill_consecutive_errors: 2, // 2 errors in a row → lock
+    kill_post_error_count: 3,   // >3 trades within 5min after error → lock
+    kill_post_error_window_min: 5,
+    impulsive_window_sec: 120,  // <2 min between trades after error
+    recovery_max_trades_per_hour: 2,
+    recovery_calm_streak_to_exit: 2,
+    recovery_idle_minutes_to_exit: 30,
+    sound_alerts: true,
+    browser_notifications: false
+  };
+}
+
+function defaultBehaviorState() {
+  return {
+    mode: 'normal',            // 'normal' | 'paused' | 'locked' | 'recovery'
+    pause_until: null,         // ISO datetime
+    lock_until:  null,         // ISO datetime
+    recovery_started_at: null,
+    last_error_at: null,
+    consecutive_errors: 0,
+    post_error_window_trades: 0,
+    last_trade_at: null,
+    last_emotion: null,
+    calm_streak: 0,
+    pending_classification_id: null  // id of trade awaiting modal
   };
 }
 
@@ -131,8 +180,35 @@ function migrateV0toV1(state) {
     settings: {
       ...oldSettings,
       tag_categories: oldSettings.tag_categories || cats,
-      behavior_tags: undefined  // dropped; harmless if persisted as undefined
-    }
+      behavior: oldSettings.behavior || defaultBehaviorSettings(),
+      behavior_tags: undefined
+    },
+    behaviorState: state?.behaviorState || defaultBehaviorState(),
+    overrideLog: state?.overrideLog || []
+  };
+}
+
+// ── Migration v1 → v2: add Behavior Engine fields ────────────────────────
+function migrateV1toV2(state) {
+  return {
+    ...state,
+    trades: (state?.trades || []).map(t => ({
+      trade_type: null,
+      post_trade_state: null,
+      error_reason: null,
+      error_emotion: null,
+      is_post_error_trade: false,
+      time_since_last_trade_sec: null,
+      impulsive_trade_flag: false,
+      classified_at: null,
+      ...t
+    })),
+    settings: {
+      ...(state?.settings || {}),
+      behavior: state?.settings?.behavior || defaultBehaviorSettings()
+    },
+    behaviorState: state?.behaviorState || defaultBehaviorState(),
+    overrideLog: state?.overrideLog || []
   };
 }
 
@@ -150,8 +226,186 @@ export const useStore = create(
       settings: {
         tag_categories: defaultTagCategories(),
         csv_column_map: {},
-        csv_account_map: {}
+        csv_account_map: {},
+        behavior: defaultBehaviorSettings()
       },
+
+      // ── Behavior Engine state (persisted) ─────────────────────────────
+      behaviorState: defaultBehaviorState(),
+      overrideLog: [],
+
+      // Process a trade event through the Behavior Engine. Returns the
+      // newly-created trade id so the UI can open the post-trade modal.
+      // The full state-machine math lives in utils/behaviorEngine.js.
+      ingestTrade: (rawTrade) => {
+        const id = uid();
+        const now = new Date();
+        const s = get();
+        const last = s.behaviorState.last_trade_at ? new Date(s.behaviorState.last_trade_at) : null;
+        const time_since_last_trade_sec = last ? Math.round((now - last) / 1000) : null;
+        const is_post_error_trade = !!s.behaviorState.last_error_at;
+        const cfg = s.settings.behavior || defaultBehaviorSettings();
+        const impulsive_trade_flag = !!(
+          is_post_error_trade &&
+          time_since_last_trade_sec != null &&
+          time_since_last_trade_sec < cfg.impulsive_window_sec
+        );
+        const trade = {
+          id,
+          ...tradeDefaults(),
+          ...rawTrade,
+          ingested_at: now.toISOString(),
+          time_since_last_trade_sec,
+          is_post_error_trade,
+          impulsive_trade_flag
+        };
+        set({
+          trades: [...s.trades, trade],
+          behaviorState: {
+            ...s.behaviorState,
+            pending_classification_id: id,
+            last_trade_at: now.toISOString(),
+            // count post-error trades in the rolling window
+            post_error_window_trades:
+              is_post_error_trade && s.behaviorState.last_error_at
+                ? withinMinutes(s.behaviorState.last_error_at, cfg.kill_post_error_window_min)
+                  ? s.behaviorState.post_error_window_trades + 1
+                  : s.behaviorState.post_error_window_trades
+                : s.behaviorState.post_error_window_trades
+          }
+        });
+        return id;
+      },
+
+      // Apply user's classification + emotion → run state machine →
+      // possibly transition into paused / locked / recovery mode.
+      classifyTrade: (tradeId, { trade_type, post_trade_state, error_reason, error_emotion }) => {
+        const s = get();
+        const cfg = s.settings.behavior || defaultBehaviorSettings();
+        const now = new Date();
+
+        const updatedTrade = {
+          trade_type,
+          post_trade_state,
+          error_reason: error_reason || null,
+          error_emotion: error_emotion || null,
+          classified_at: now.toISOString()
+        };
+
+        let bs = { ...s.behaviorState, pending_classification_id: null, last_emotion: post_trade_state };
+
+        // Calm-streak tracking (used to exit Recovery mode)
+        if (post_trade_state === 'calm') bs.calm_streak = (bs.calm_streak || 0) + 1;
+        else bs.calm_streak = 0;
+
+        if (trade_type === 'error') {
+          bs.last_error_at = now.toISOString();
+          bs.consecutive_errors = (bs.consecutive_errors || 0) + 1;
+          bs.post_error_window_trades = 0;
+          // Pause for cfg.pause_minutes
+          bs.pause_until = new Date(now.getTime() + cfg.pause_minutes * 60_000).toISOString();
+          bs.mode = 'paused';
+
+          // Kill-switch: 2+ consecutive errors → full lock
+          if (bs.consecutive_errors >= cfg.kill_consecutive_errors) {
+            bs.lock_until = new Date(now.getTime() + cfg.kill_lock_minutes * 60_000).toISOString();
+            bs.mode = 'locked';
+          }
+        } else {
+          // Plan trade resets the consecutive-error counter
+          bs.consecutive_errors = 0;
+        }
+
+        // Kill-switch: too many trades in the post-error window
+        if (
+          bs.post_error_window_trades >= cfg.kill_post_error_count &&
+          bs.last_error_at &&
+          withinMinutes(bs.last_error_at, cfg.kill_post_error_window_min)
+        ) {
+          bs.lock_until = new Date(now.getTime() + cfg.kill_lock_minutes * 60_000).toISOString();
+          bs.mode = 'locked';
+        }
+
+        // Recovery mode trigger — emotional state = urgent
+        if (post_trade_state === 'urgent' && bs.mode === 'normal') {
+          bs.mode = 'recovery';
+          bs.recovery_started_at = now.toISOString();
+        }
+
+        set({
+          trades: s.trades.map(t => t.id === tradeId ? { ...t, ...updatedTrade } : t),
+          behaviorState: bs
+        });
+      },
+
+      // Run periodic check (called from a timer hook): expire pause/lock,
+      // potentially exit Recovery on calm streak / idle.
+      tickBehavior: () => {
+        const s = get();
+        const cfg = s.settings.behavior || defaultBehaviorSettings();
+        const now = new Date();
+        let bs = { ...s.behaviorState };
+        let changed = false;
+
+        // Expire pause
+        if (bs.mode === 'paused' && bs.pause_until && new Date(bs.pause_until) <= now) {
+          bs.mode = 'normal';
+          bs.pause_until = null;
+          changed = true;
+        }
+        // Expire lock
+        if (bs.mode === 'locked' && bs.lock_until && new Date(bs.lock_until) <= now) {
+          bs.mode = 'normal';
+          bs.lock_until = null;
+          bs.consecutive_errors = 0;
+          bs.post_error_window_trades = 0;
+          changed = true;
+        }
+        // Exit recovery on calm streak or idle
+        if (bs.mode === 'recovery') {
+          if (bs.calm_streak >= cfg.recovery_calm_streak_to_exit) {
+            bs.mode = 'normal';
+            bs.recovery_started_at = null;
+            changed = true;
+          } else if (bs.last_trade_at) {
+            const idleMin = (now - new Date(bs.last_trade_at)) / 60_000;
+            if (idleMin >= cfg.recovery_idle_minutes_to_exit) {
+              bs.mode = 'normal';
+              bs.recovery_started_at = null;
+              changed = true;
+            }
+          }
+        }
+        if (changed) set({ behaviorState: bs });
+      },
+
+      // Manual override (logged for accountability)
+      overrideLock: (note) => {
+        const s = get();
+        const now = new Date();
+        set({
+          behaviorState: {
+            ...s.behaviorState,
+            mode: 'normal',
+            pause_until: null,
+            lock_until: null,
+            consecutive_errors: 0,
+            post_error_window_trades: 0
+          },
+          overrideLog: [
+            ...(s.overrideLog || []),
+            {
+              id: uid(),
+              at: now.toISOString(),
+              previous_mode: s.behaviorState.mode,
+              note: note || ''
+            }
+          ]
+        });
+      },
+
+      // Manual reset of behavior state (e.g. start of new day)
+      resetBehaviorState: () => set({ behaviorState: defaultBehaviorState() }),
 
       addTrade: (t) => set((s) => ({ trades: [...s.trades, { id: uid(), ...tradeDefaults(), ...t }] })),
       addTrades: (newTrades) => set((s) => ({
@@ -294,10 +548,12 @@ export const useStore = create(
     }),
     {
       name: 'trading-dashboard-v2',
-      version: 1,
+      version: 2,
       migrate: (persisted, fromVersion) => {
-        if (fromVersion < 1) return migrateV0toV1(persisted || {});
-        return persisted;
+        let next = persisted || {};
+        if (fromVersion < 1) next = migrateV0toV1(next);
+        if (fromVersion < 2) next = migrateV1toV2(next);
+        return next;
       }
     }
   )
