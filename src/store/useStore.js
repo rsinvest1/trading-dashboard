@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { applyEvents } from '../utils/positionAggregator';
 
 const DEFAULT_BEHAVIOR_TAGS = [
   'Revenge trade', 'FOMO entry', 'Stuck to plan', 'Early exit',
@@ -118,8 +119,10 @@ function defaultBehaviorSettings() {
     kill_post_error_window_min: 5,
     impulsive_window_sec: 120,  // <2 min between trades after error
     recovery_max_trades_per_hour: 2,
+    recovery_min_seconds_between: 600,  // 10 min between trades in recovery
     recovery_calm_streak_to_exit: 2,
     recovery_idle_minutes_to_exit: 30,
+    override_min_reason_chars: 20,
     sound_alerts: true,
     browser_notifications: false
   };
@@ -234,9 +237,72 @@ export const useStore = create(
       behaviorState: defaultBehaviorState(),
       overrideLog: [],
 
+      // ── Webhook ingestion (real-time) ─────────────────────────────────
+      webhook: {
+        live_mode: false,
+        cursor: '',
+        last_poll_at: null,
+        last_status: null,
+        seen_event_ids: [],   // FIFO bounded list for dedupe (last 500)
+        positions: {}          // open positions keyed by position_id
+      },
+
+      setWebhookLiveMode: (on) => set((s) => ({
+        webhook: { ...s.webhook, live_mode: !!on }
+      })),
+
+      // Process webhook events: dedupe by event_id, run through position
+      // aggregator, ingest each completed trade into the Behavior Engine.
+      processWebhookEvents: (events) => {
+        const s = get();
+        const seen = new Set(s.webhook.seen_event_ids || []);
+        const fresh = (events || []).filter(e => e?.event_id && !seen.has(e.event_id));
+        if (!fresh.length) {
+          set({ webhook: { ...s.webhook, last_poll_at: new Date().toISOString(), last_status: 'idle' } });
+          return { newEvents: 0, completed: 0 };
+        }
+
+        const { positions, completed } = applyEvents(s.webhook.positions || {}, fresh);
+
+        // Bound the dedupe set to last 500 event ids
+        const newSeen = [...(s.webhook.seen_event_ids || []), ...fresh.map(e => e.event_id)];
+        const trimmedSeen = newSeen.length > 500 ? newSeen.slice(-500) : newSeen;
+
+        set({
+          webhook: {
+            ...s.webhook,
+            positions,
+            seen_event_ids: trimmedSeen,
+            last_poll_at: new Date().toISOString(),
+            last_status: completed.length ? 'completed' : 'partial'
+          }
+        });
+
+        // Ingest each completed trade — fingerprint dedupe vs existing trades
+        const after = get();
+        const existingFingerprints = new Set(
+          after.trades.map(t => t.fingerprint || `${t.symbol}|${t.date}|${t.time}|${t.side}|${t.contracts}|${t.entry}|${t.exit}|${t.pnl}`)
+        );
+        for (const trade of completed) {
+          const fp = `${trade.symbol}|${trade.date}|${trade.time}|${trade.side}|${trade.contracts}|${trade.entry}|${trade.exit}|${trade.pnl}`;
+          if (existingFingerprints.has(fp)) continue;
+          // Use ingestTrade so the Behavior Engine fires
+          get().ingestTrade({ ...trade, fingerprint: fp });
+        }
+
+        return { newEvents: fresh.length, completed: completed.length };
+      },
+
+      setWebhookCursor: (cursor) => set((s) => ({
+        webhook: { ...s.webhook, cursor }
+      })),
+
+      resetWebhookPositions: () => set((s) => ({
+        webhook: { ...s.webhook, positions: {}, seen_event_ids: [] }
+      })),
+
       // Process a trade event through the Behavior Engine. Returns the
       // newly-created trade id so the UI can open the post-trade modal.
-      // The full state-machine math lives in utils/behaviorEngine.js.
       ingestTrade: (rawTrade) => {
         const id = uid();
         const now = new Date();
@@ -275,6 +341,34 @@ export const useStore = create(
           }
         });
         return id;
+      },
+
+      // Recovery-mode gate — UI calls this BEFORE Quick Add or live ingest
+      // to check if a new trade is allowed. Returns:
+      //   { allowed: true } | { allowed: false, reason: '...', wait_sec: N }
+      canTradeNow: () => {
+        const s = get();
+        const bs = s.behaviorState;
+        const cfg = s.settings.behavior || defaultBehaviorSettings();
+        if (bs.mode === 'paused' || bs.mode === 'locked') {
+          return { allowed: false, reason: bs.mode };
+        }
+        if (bs.mode === 'recovery' && bs.last_trade_at) {
+          const sinceSec = (Date.now() - new Date(bs.last_trade_at).getTime()) / 1000;
+          const minSpace = cfg.recovery_min_seconds_between || 600;
+          if (sinceSec < minSpace) {
+            return { allowed: false, reason: 'recovery_spacing', wait_sec: Math.ceil(minSpace - sinceSec) };
+          }
+          // Trades-per-hour cap
+          const oneHourAgo = Date.now() - 60 * 60 * 1000;
+          const recent = s.trades.filter(t =>
+            t.ingested_at && new Date(t.ingested_at).getTime() >= oneHourAgo
+          ).length;
+          if (recent >= cfg.recovery_max_trades_per_hour) {
+            return { allowed: false, reason: 'recovery_cap' };
+          }
+        }
+        return { allowed: true };
       },
 
       // Apply user's classification + emotion → run state machine →

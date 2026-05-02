@@ -1,0 +1,24 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Friendly aliases so the webhook URL stays clean
+[[redirects]]
+  from = "/webhook"
+  to   = "/.netlify/functions/webhook"
+  status = 200
+
+[[redirects]]
+  from = "/events"
+  to   = "/.netlify/functions/events"
+  status = 200
+
+# SPA fallback (must be last)
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

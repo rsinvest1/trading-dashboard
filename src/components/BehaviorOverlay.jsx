@@ -82,13 +82,14 @@ export function KillSwitchScreen() {
   const until = useStore(s => s.behaviorState.lock_until);
   const consecErrors = useStore(s => s.behaviorState.consecutive_errors);
   const overrideLock = useStore(s => s.overrideLock);
+  const minChars = useStore(s => s.settings.behavior?.override_min_reason_chars ?? 20);
   const [showOverride, setShowOverride] = useState(false);
   const [overrideNote, setOverrideNote] = useState('');
 
   if (mode !== 'locked') return null;
 
   function doOverride() {
-    if (!overrideNote.trim() || overrideNote.trim().length < 10) return;
+    if (!overrideNote.trim() || overrideNote.trim().length < minChars) return;
     overrideLock(overrideNote.trim());
     setShowOverride(false);
     setOverrideNote('');
@@ -135,24 +136,27 @@ export function KillSwitchScreen() {
             <textarea
               value={overrideNote}
               onChange={e => setOverrideNote(e.target.value)}
-              placeholder="Why are you overriding the lock? (min 10 chars — be honest)"
+              placeholder={`Why are you overriding the lock? (min ${minChars} chars — be honest)`}
               rows={3}
               className="w-full bg-bg border border-bg-border rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-red/50 resize-none"
             />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => { setShowOverride(false); setOverrideNote(''); }}
-                className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
-              >
-                Stay locked
-              </button>
-              <button
-                onClick={doOverride}
-                disabled={overrideNote.trim().length < 10}
-                className="px-3 py-1.5 text-xs bg-accent-red text-white rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Override anyway
-              </button>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-text-muted">{overrideNote.trim().length}/{minChars}</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowOverride(false); setOverrideNote(''); }}
+                  className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+                >
+                  Stay locked
+                </button>
+                <button
+                  onClick={doOverride}
+                  disabled={overrideNote.trim().length < minChars}
+                  className="px-3 py-1.5 text-xs bg-accent-red text-white rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Override anyway
+                </button>
+              </div>
             </div>
           </div>
         )}

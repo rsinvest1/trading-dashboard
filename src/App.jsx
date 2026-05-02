@@ -9,8 +9,10 @@ import JournalPage from './pages/JournalPage';
 import SettingsPage from './pages/SettingsPage';
 import BehaviorOverlay, { PersistentRuleBanner } from './components/BehaviorOverlay';
 import PostTradeModal from './components/PostTradeModal';
+import { useWebhookPoller } from './utils/useWebhookPoller';
 
 export default function App() {
+  useWebhookPoller();
   return (
     <div className="flex flex-col h-full">
       <PersistentRuleBanner />

@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import CsvImporter from '../components/CsvImporter';
 import TradeDetailDrawer from '../components/TradeDetailDrawer';
 import QuickAddTrade from '../components/QuickAddTrade';
+import WebhookLiveBadge from '../components/WebhookLiveBadge';
 import { fmtMoney, fmtR, realizedR } from '../utils/calculations';
 
 const COLS = [
@@ -150,6 +151,7 @@ export default function TradeLogPage() {
               <Trash2 size={14} /> Clear
             </button>
           )}
+          <WebhookLiveBadge />
           <QuickAddTrade />
           <button
             onClick={() => setImporting(true)}

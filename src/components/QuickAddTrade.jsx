@@ -6,8 +6,10 @@ import { TICKERS } from '../utils/instruments';
 export default function QuickAddTrade() {
   const accounts = useStore(s => s.accounts);
   const ingest   = useStore(s => s.ingestTrade);
+  const canTradeNow = useStore(s => s.canTradeNow);
   const mode     = useStore(s => s.behaviorState.mode);
   const [open, setOpen] = useState(false);
+  const [gateMsg, setGateMsg] = useState(null);
 
   // Default fields
   const now = new Date();
@@ -43,6 +45,17 @@ export default function QuickAddTrade() {
 
   function submit() {
     if (!draft.account_id) return;
+    const gate = canTradeNow();
+    if (!gate.allowed) {
+      const msg = gate.reason === 'recovery_spacing'
+        ? `Recovery mode: wait ${Math.ceil(gate.wait_sec / 60)}m more between trades.`
+        : gate.reason === 'recovery_cap'
+        ? 'Recovery mode trade-cap reached for this hour.'
+        : `Trading is ${gate.reason}.`;
+      setGateMsg(msg);
+      setTimeout(() => setGateMsg(null), 4000);
+      return;
+    }
     ingest({
       date: draft.date,
       time: draft.time,
@@ -170,6 +183,11 @@ export default function QuickAddTrade() {
                   Log trade
                 </button>
               </div>
+              {gateMsg && (
+                <div className="text-[11px] text-accent-yellow text-center bg-accent-yellow/10 rounded px-2 py-1.5">
+                  {gateMsg}
+                </div>
+              )}
               <p className="text-[10px] text-text-muted text-center">
                 You'll be asked to classify this trade (Plan / Error) and your emotional state.
               </p>

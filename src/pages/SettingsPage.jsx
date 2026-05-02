@@ -3,6 +3,7 @@ import { Plus, X, Edit2, Check, Trash2, Download, Upload } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { fmtMoney } from '../utils/calculations';
 import { INSTRUMENTS } from '../utils/instruments';
+import WebhookSettings from '../components/WebhookSettings';
 
 function NumberField({ value, onChange, placeholder, prefix = '$' }) {
   return (
@@ -379,6 +380,8 @@ export default function SettingsPage() {
       </section>
 
       <BehaviorSettingsSection />
+
+      <WebhookSettings />
 
       <section>
         <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Instruments</h2>
