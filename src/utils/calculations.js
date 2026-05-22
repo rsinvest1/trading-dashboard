@@ -119,14 +119,22 @@ export function pnlByDay(trades) {
   return map;
 }
 
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function filterByPeriod(trades, period) {
   if (period === 'all') return trades;
   const now = new Date();
+  if (period === 'day') {
+    const today = localDateStr(now);
+    return trades.filter(t => t.date === today);
+  }
   const start = new Date(now);
-  if (period === 'day') start.setHours(0, 0, 0, 0);
-  else if (period === 'week') start.setDate(now.getDate() - 7);
+  if (period === 'week') start.setDate(now.getDate() - 7);
   else if (period === 'month') start.setMonth(now.getMonth() - 1);
-  return trades.filter(t => new Date(t.date) >= start);
+  const startStr = localDateStr(start);
+  return trades.filter(t => t.date >= startStr);
 }
 
 export function fmtMoney(n) {

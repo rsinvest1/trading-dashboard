@@ -9,6 +9,7 @@ import InSessionControlPanel from '../components/InSessionControlPanel';
 import PnlByTickerChart from '../components/charts/PnlByTickerChart';
 import DayOfWeekChart from '../components/charts/DayOfWeekChart';
 import IntradayHeatmap from '../components/charts/IntradayHeatmap';
+import StrategyAnalytics from '../components/charts/StrategyAnalytics';
 import {
   totalPnL, winLossCounts, winRate, profitFactor, avgRR, avgWin, avgLoss,
   expectancy, bestTrade, worstTrade, maxDrawdown, sharpeRatio, streaks,
@@ -25,10 +26,15 @@ const PERIODS = [
 export default function DashboardPage() {
   const trades = useStore(s => s.trades);
   const accounts = useStore(s => s.accounts);
+  const strategies = useStore(s => s.strategies);
+  const tagCategories = useStore(s => s.settings.tag_categories ?? []);
   const [period, setPeriod] = useState('all');
 
   const filtered = useMemo(() => filterByPeriod(trades, period), [trades, period]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
   const todayPnL = useMemo(
     () => trades.filter(t => t.date === today).reduce((s, t) => s + (Number(t.pnl) || 0), 0),
     [trades, today]
@@ -144,6 +150,19 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {strategies.length > 0 && filtered.length > 0 && (
+        <section>
+          <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Strategy Analytics</h2>
+          <div className="space-y-4">
+            <StrategyAnalytics
+              filtered={filtered}
+              strategies={strategies}
+              tagCategories={tagCategories}
+            />
+          </div>
+        </section>
+      )}
 
       <TendenciesSection />
     </div>

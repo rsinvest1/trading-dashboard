@@ -25,8 +25,15 @@ const COLOR_DOT = {
   blue: 'bg-accent-blue', muted: 'bg-text-secondary'
 };
 
+const DEFAULT_BEHAVIOR_CFG = {
+  pause_minutes: 5, kill_consecutive_errors: 2, kill_lock_minutes: 45,
+  kill_post_error_count: 3, kill_post_error_window_min: 5, impulsive_window_sec: 120,
+  recovery_max_trades_per_hour: 2, recovery_calm_streak_to_exit: 2,
+  recovery_idle_minutes_to_exit: 30
+};
+
 function BehaviorSettingsSection() {
-  const cfg = useStore(s => s.settings.behavior);
+  const cfg = useStore(s => s.settings.behavior) || DEFAULT_BEHAVIOR_CFG;
   const updateSettings = useStore(s => s.updateSettings);
   const overrideLog = useStore(s => s.overrideLog || []);
   const resetBehavior = useStore(s => s.resetBehaviorState);

@@ -635,7 +635,8 @@ export const useStore = create(
           settings: {
             tag_categories: next.settings?.tag_categories || defaultTagCategories(),
             csv_column_map: next.settings?.csv_column_map || {},
-            csv_account_map: next.settings?.csv_account_map || {}
+            csv_account_map: next.settings?.csv_account_map || {},
+            behavior: next.settings?.behavior || defaultBehaviorSettings()
           }
         });
       }
