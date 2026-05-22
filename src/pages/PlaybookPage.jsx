@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, ArrowLeft, Edit2, Trash2, X, ImagePlus, Calendar as CalIcon, Tag,
-  Newspaper, BookOpen
+  Newspaper, BookOpen, ClipboardPaste
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { TICKERS } from '../utils/instruments';
@@ -312,53 +312,105 @@ async function fileToDataUrl(file, maxDim = 1600) {
 
 function ChartUploader({ charts, onChange }) {
   const fileRef = useRef(null);
-  const dropRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [hint, setHint] = useState('');
+  // Keep the latest charts available inside listeners bound once on mount.
+  const chartsRef = useRef(charts);
+  chartsRef.current = charts;
+
+  function flash(msg) {
+    setHint(msg);
+    setTimeout(() => setHint(''), 2500);
+  }
 
   async function addFiles(files) {
-    const next = [...charts];
-    for (const f of files) {
-      if (!f.type.startsWith('image/')) continue;
+    const imgs = [...files].filter(f => f && f.type?.startsWith('image/'));
+    if (!imgs.length) return 0;
+    const next = [...chartsRef.current];
+    for (const f of imgs) {
       try {
         const dataUrl = await fileToDataUrl(f);
         next.push({ id: uid(), dataUrl, caption: '' });
       } catch (e) { /* skip */ }
     }
     onChange(next);
+    return imgs.length;
   }
 
+  // Global paste — works anywhere on the page while the form is open, so you
+  // can capture with the Windows Snipping Tool and just press Ctrl+V (no need
+  // to click into the box first). Text pastes are ignored so other inputs work.
   useEffect(() => {
-    function onPaste(e) {
-      const items = [...(e.clipboardData?.items || [])];
-      const files = items.filter(it => it.kind === 'file').map(it => it.getAsFile()).filter(Boolean);
+    async function onPaste(e) {
+      const files = [...(e.clipboardData?.items || [])]
+        .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
+        .map(it => it.getAsFile())
+        .filter(Boolean);
       if (files.length) {
         e.preventDefault();
-        addFiles(files);
+        const n = await addFiles(files);
+        if (n) flash(`Pasted ${n} chart${n === 1 ? '' : 's'}`);
       }
     }
-    const el = dropRef.current;
-    el?.addEventListener('paste', onPaste);
-    return () => el?.removeEventListener('paste', onPaste);
-  }, [charts]);
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, []);
+
+  // Button-driven paste via the async Clipboard API (Chrome over HTTPS/localhost).
+  async function pasteFromClipboard() {
+    try {
+      const items = await navigator.clipboard.read();
+      const files = [];
+      for (const item of items) {
+        const type = item.types.find(t => t.startsWith('image/'));
+        if (type) {
+          const blob = await item.getType(type);
+          files.push(new File([blob], `snip-${Date.now()}.png`, { type }));
+        }
+      }
+      if (files.length) {
+        const n = await addFiles(files);
+        flash(`Pasted ${n} chart${n === 1 ? '' : 's'}`);
+      } else {
+        flash('No image on the clipboard — snip first, then paste');
+      }
+    } catch (err) {
+      flash('Clipboard blocked by browser — press Ctrl+V instead');
+    }
+  }
 
   function onDrop(e) {
     e.preventDefault();
+    setDragOver(false);
     const files = [...(e.dataTransfer?.files || [])];
-    if (files.length) addFiles(files);
+    if (files.length) { addFiles(files).then(n => n && flash(`Added ${n} chart${n === 1 ? '' : 's'}`)); return; }
+    // Fallback: image dragged as a data-transfer item (some apps don't expose .files)
+    const items = [...(e.dataTransfer?.items || [])]
+      .filter(it => it.kind === 'file' && it.type.startsWith('image/'))
+      .map(it => it.getAsFile())
+      .filter(Boolean);
+    if (items.length) addFiles(items).then(n => n && flash(`Added ${n} chart${n === 1 ? '' : 's'}`));
   }
 
   return (
     <div>
       <div
-        ref={dropRef}
         tabIndex={0}
         onDrop={onDrop}
-        onDragOver={e => e.preventDefault()}
-        className="border-2 border-dashed border-bg-border hover:border-accent-green/50 focus:border-accent-green/50 focus:outline-none rounded-lg p-4 text-center cursor-pointer transition-colors"
+        onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
+        onDragLeave={e => { e.preventDefault(); setDragOver(false); }}
         onClick={() => fileRef.current?.click()}
+        className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors focus:outline-none ${
+          dragOver
+            ? 'border-accent-green bg-accent-green/10'
+            : 'border-bg-border hover:border-accent-green/50 focus:border-accent-green/50'
+        }`}
       >
         <ImagePlus size={20} className="mx-auto text-text-secondary mb-1" />
         <div className="text-xs text-text-secondary">
-          Drop charts here, click to browse, or focus + paste from clipboard
+          {dragOver
+            ? 'Drop to add chart'
+            : 'Snip with the Windows Snipping Tool, then press Ctrl+V — or drop / click to browse'}
         </div>
         <input
           ref={fileRef}
@@ -368,6 +420,16 @@ function ChartUploader({ charts, onChange }) {
           className="hidden"
           onChange={e => addFiles([...e.target.files])}
         />
+      </div>
+      <div className="flex items-center gap-3 mt-2">
+        <button
+          type="button"
+          onClick={pasteFromClipboard}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs border border-bg-border rounded text-text-secondary hover:text-accent-green hover:border-accent-green/40 transition-colors"
+        >
+          <ClipboardPaste size={13} /> Paste from clipboard
+        </button>
+        {hint && <span className="text-xs text-accent-green">{hint}</span>}
       </div>
       {charts.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
