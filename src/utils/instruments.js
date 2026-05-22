@@ -15,7 +15,11 @@ export const INSTRUMENTS = {
   MCL: { name: 'Micro Crude',  pointValue: 100 },
   ZS:  { name: 'Soybeans',     pointValue: 50 },
   ZC:  { name: 'Corn',         pointValue: 50 },
-  ZW:  { name: 'Wheat',        pointValue: 50 }
+  ZW:  { name: 'Wheat',        pointValue: 50 },
+  NG:  { name: 'Natural Gas',  pointValue: 10000 },
+  NKD: { name: 'Nikkei 225 ($)', pointValue: 5 },
+  '6A': { name: 'AUD/USD',     pointValue: 100000 },
+  '6J': { name: 'JPY/USD',     pointValue: 12500000 }
 };
 
 export const TICKERS = Object.keys(INSTRUMENTS);
@@ -26,8 +30,8 @@ export function pointValue(ticker) {
 
 // Ordered longest-first so prefix matching prefers micros and multi-letter roots.
 const TICKER_PREFIXES = [
-  'MNQ', 'MGC', 'MCL', 'MES', 'MYM', 'M2K', 'SIL',
-  'NQ', 'ES', 'GC', 'CL', 'YM', 'ZS', 'ZC', 'ZW', 'SI', 'RTY'
+  'MNQ', 'MGC', 'MCL', 'MES', 'MYM', 'M2K', 'SIL', 'NKD',
+  'NQ', 'ES', 'GC', 'CL', 'YM', 'ZS', 'ZC', 'ZW', 'SI', 'RTY', 'NG', '6A', '6J'
 ];
 
 export function tickerFromSymbol(symbol) {

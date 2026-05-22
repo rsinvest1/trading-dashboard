@@ -9,6 +9,7 @@ import JournalPage from './pages/JournalPage';
 import SettingsPage from './pages/SettingsPage';
 import BehaviorOverlay, { PersistentRuleBanner } from './components/BehaviorOverlay';
 import PostTradeModal from './components/PostTradeModal';
+import AutoBackupPrompt from './components/AutoBackupPrompt';
 import { useWebhookPoller } from './utils/useWebhookPoller';
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
       {/* Behavior Engine overlays — always mounted, render conditionally */}
       <BehaviorOverlay />
       <PostTradeModal />
+      <AutoBackupPrompt />
     </div>
   );
 }
