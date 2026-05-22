@@ -9,6 +9,25 @@
 
 import { tickerFromSymbol } from './instruments';
 
+// Convert an ISO timestamp to ET (America/New_York) date + time strings so
+// webhook trades are stored in the same timezone as CSV imports — and so the
+// futures-session "Day" filter groups them with the correct trading day.
+function etDateTime(iso) {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  const parts = {};
+  for (const p of fmt.formatToParts(new Date(iso))) parts[p.type] = p.value;
+  let hh = parts.hour;
+  if (hh === '24') hh = '00';
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${hh}:${parts.minute}`
+  };
+}
+
 /**
  * Aggregate a list of deals belonging to one position_id into a single
  * round-trip trade record matching our existing trade schema.
@@ -39,9 +58,7 @@ export function aggregateDeals(deals) {
   const pnl  = sorted.reduce((s, d) => s + (Number(d.pnl)  || 0), 0);
   const fees = sorted.reduce((s, d) => s + (Number(d.fees) || 0), 0);
 
-  const dt = new Date(opening.timestamp);
-  const date = dt.toISOString().slice(0, 10);
-  const time = dt.toTimeString().slice(0, 5);
+  const { date, time } = etDateTime(opening.timestamp);
 
   return {
     position_id: first.position_id,

@@ -13,7 +13,8 @@ import StrategyAnalytics from '../components/charts/StrategyAnalytics';
 import {
   totalPnL, winLossCounts, winRate, profitFactor, avgRR, avgWin, avgLoss,
   expectancy, bestTrade, worstTrade, maxDrawdown, sharpeRatio, streaks,
-  filterByPeriod, fmtMoney, fmtPct, fmtNum
+  filterByPeriod, fmtMoney, fmtPct, fmtNum,
+  currentSessionDate, tradeSessionDate
 } from '../utils/calculations';
 
 const PERIODS = [
@@ -31,13 +32,12 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState('all');
 
   const filtered = useMemo(() => filterByPeriod(trades, period), [trades, period]);
-  const today = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }, []);
+  const currentSession = useMemo(() => currentSessionDate(), []);
   const todayPnL = useMemo(
-    () => trades.filter(t => t.date === today).reduce((s, t) => s + (Number(t.pnl) || 0), 0),
-    [trades, today]
+    () => trades
+      .filter(t => tradeSessionDate(t) === currentSession)
+      .reduce((s, t) => s + (Number(t.pnl) || 0), 0),
+    [trades, currentSession]
   );
 
   const stats = useMemo(() => {

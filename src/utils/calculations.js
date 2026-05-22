@@ -33,9 +33,20 @@ export function profitFactor(trades) {
 }
 
 export function avgRR(trades) {
-  const valid = trades.filter(t => t.rr_actual != null && !isNaN(Number(t.rr_actual)));
-  if (!valid.length) return 0;
-  return valid.reduce((s, t) => s + Number(t.rr_actual), 0) / valid.length;
+  // Hybrid: use the true realized R-multiple for any trade that has a stop /
+  // planned risk defined. If no trade carries risk data, fall back to the
+  // avg-win / |avg-loss| reward-to-risk ratio so the stat is never blank.
+  const realized = trades
+    .map(t => (t.rr_actual != null && !isNaN(Number(t.rr_actual)))
+      ? Number(t.rr_actual)
+      : realizedR(t))
+    .filter(r => r != null && isFinite(r));
+  if (realized.length) {
+    return realized.reduce((s, r) => s + r, 0) / realized.length;
+  }
+  const aw = avgWin(trades);
+  const al = Math.abs(avgLoss(trades));
+  return al === 0 ? 0 : aw / al;
 }
 
 export function avgWin(trades) {
@@ -119,17 +130,56 @@ export function pnlByDay(trades) {
   return map;
 }
 
+function pad2(n) { return String(n).padStart(2, '0'); }
+
 function localDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// Add one calendar day to a 'YYYY-MM-DD' string via UTC arithmetic (no TZ drift).
+function addDayStr(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+
+// Futures session date. The CME session runs 18:00 ET (previous calendar day)
+// → 17:00 ET. A trade timestamped at hour >= 18 ET belongs to the NEXT
+// calendar day's session. `hour` is the ET hour of the trade (0-23).
+export function sessionDateOf(dateStr, hour) {
+  if (!dateStr) return dateStr;
+  return hour >= 18 ? addDayStr(dateStr) : dateStr;
+}
+
+// Session date for a stored trade (date + 'HH:MM' time, both in ET).
+export function tradeSessionDate(t) {
+  const hour = t.time ? (parseInt(String(t.time).slice(0, 2), 10) || 0) : 0;
+  return sessionDateOf(t.date, hour);
+}
+
+// Current futures session date, computed explicitly in America/New_York so it
+// is correct regardless of the timezone of the machine viewing the dashboard.
+export function currentSessionDate() {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', hour12: false
+  });
+  const parts = {};
+  for (const p of fmt.formatToParts(new Date())) parts[p.type] = p.value;
+  let hour = parseInt(parts.hour, 10);
+  if (hour === 24) hour = 0; // some engines emit '24' at midnight
+  return sessionDateOf(`${parts.year}-${parts.month}-${parts.day}`, hour);
 }
 
 export function filterByPeriod(trades, period) {
   if (period === 'all') return trades;
-  const now = new Date();
   if (period === 'day') {
-    const today = localDateStr(now);
-    return trades.filter(t => t.date === today);
+    const current = currentSessionDate();
+    return trades.filter(t => tradeSessionDate(t) === current);
   }
+  const now = new Date();
   const start = new Date(now);
   if (period === 'week') start.setDate(now.getDate() - 7);
   else if (period === 'month') start.setMonth(now.getMonth() - 1);
