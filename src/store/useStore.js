@@ -111,6 +111,27 @@ function tradeDefaults() {
   };
 }
 
+// ── Playbook factory ────────────────────────────────────────────────────
+// Builds a fully-defaulted playbook from a partial. Always assigns a fresh id
+// and only picks known fields (ignores transient draft fields like `_meta`).
+// Shared by addPlaybook (one) and addPlaybooks (batch / OneNote import).
+function playbookDefaults(p = {}) {
+  return {
+    id: uid(),
+    title: p.title ?? '',
+    date: p.date ?? new Date().toISOString().slice(0, 10),
+    time: p.time ?? '',
+    setup_name: p.setup_name ?? '',
+    event_key: p.event_key ?? null,   // links playbook to a recurring release event
+    instruments: p.instruments ?? [],
+    catalysts: p.catalysts ?? [],
+    context: p.context ?? '',
+    charts: p.charts ?? [],
+    outcome: p.outcome ?? '',
+    created_at: new Date().toISOString()
+  };
+}
+
 // ── Default Behavior Engine settings ────────────────────────────────────
 function defaultBehaviorSettings() {
   return {
@@ -571,20 +592,12 @@ export const useStore = create(
       deleteStrategy: (id) => set((s) => ({ strategies: s.strategies.filter(p => p.id !== id) })),
 
       addPlaybook: (p) => set((s) => ({
-        playbooks: [...s.playbooks, {
-          id: uid(),
-          title: p.title ?? '',
-          date: p.date ?? new Date().toISOString().slice(0, 10),
-          time: p.time ?? '',
-          setup_name: p.setup_name ?? '',
-          event_key: p.event_key ?? null,   // links playbook to a recurring release event
-          instruments: p.instruments ?? [],
-          catalysts: p.catalysts ?? [],
-          context: p.context ?? '',
-          charts: p.charts ?? [],
-          outcome: p.outcome ?? '',
-          created_at: new Date().toISOString()
-        }]
+        playbooks: [...s.playbooks, playbookDefaults(p)]
+      })),
+      // Additive batch insert (mirrors addTrades) — used by the OneNote importer.
+      // NEVER use importData() for this: that replaces the whole store.
+      addPlaybooks: (arr) => set((s) => ({
+        playbooks: [...s.playbooks, ...(arr || []).map(playbookDefaults)]
       })),
       updatePlaybook: (id, patch) => set((s) => ({
         playbooks: s.playbooks.map(p => p.id === id ? { ...p, ...patch } : p)
