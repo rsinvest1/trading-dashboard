@@ -7,6 +7,7 @@ import TendenciesSection from '../components/TendenciesSection';
 import StrengthsPanel from '../components/StrengthsPanel';
 import InSessionControlPanel from '../components/InSessionControlPanel';
 import PnlByTickerChart from '../components/charts/PnlByTickerChart';
+import PnlByPlaybookChart from '../components/charts/PnlByPlaybookChart';
 import DayOfWeekChart from '../components/charts/DayOfWeekChart';
 import IntradayHeatmap from '../components/charts/IntradayHeatmap';
 import StrategyAnalytics from '../components/charts/StrategyAnalytics';
@@ -147,6 +148,9 @@ export default function DashboardPage() {
           <DayOfWeekChart />
           <div className="lg:col-span-2">
             <IntradayHeatmap />
+          </div>
+          <div className="lg:col-span-2">
+            <PnlByPlaybookChart />
           </div>
         </div>
       </section>
