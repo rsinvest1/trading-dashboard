@@ -168,6 +168,7 @@ Persisted in `localStorage` under key `trading-dashboard-v2`. Schema is versione
 |---------|-----------|
 | **v0 → v1** | Flat `behavior_tags` → categorized `tag_categories`; rename `patterns` → `strategies`; per-trade `behavior_tags: string[]` → `tags: { [catId]: tagId[] }` |
 | **v1 → v2** | Add Behavior Engine fields: `trade_type`, `post_trade_state`, `error_reason`, `error_emotion`, `is_post_error_trade`, `time_since_last_trade_sec`, `impulsive_trade_flag`, `classified_at`. Add `behaviorState` slice and `overrideLog`. |
+| **v2 → v3** | Recompute `ticker = tickerFromSymbol(symbol)` for all trades (so newly-added instruments like HG/6B/6E resolve for already-stored trades). Add `duration_sec` field default. |
 
 Migration code lives in `useStore.js` — `migrateV0toV1()` and `migrateV1toV2()`.
 **Always bump the version when changing persisted shape.** Add a new `migrateVN-1toVN()` and chain it in the `migrate` function.
@@ -193,6 +194,7 @@ Migration code lives in `useStore.js` — `migrateV0toV1()` and `migrateV1toV2()
   pnl:   200,
   fees:  0.62,
   fills_count: 4,
+  duration_sec: 312,        // hold time: open → flat (null for trades pre-v3)
   source: 'csv' | 'quick_add' | 'webhook',
 
   // Risk / R-multiple (Phase 1 of feature expansion)
