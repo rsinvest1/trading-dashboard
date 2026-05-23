@@ -6,6 +6,7 @@ import {
 import { useStore } from '../store/useStore';
 import { TICKERS } from '../utils/instruments';
 import { fmtMoney, fmtPct, fmtR, realizedR } from '../utils/calculations';
+import { EVENT_KEYS } from '../utils/events';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -200,6 +201,11 @@ function PlaybookDetail({ playbook, stats, onBack, onEdit, onDelete }) {
               <span className="text-text-muted">·</span>
               <span className="text-accent-yellow">{playbook.setup_name}</span>
             </>
+          )}
+          {playbook.event_key && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border border-accent-blue/30 bg-accent-blue/10 text-accent-blue font-mono">
+              {playbook.event_key}
+            </span>
           )}
         </div>
         {playbook.instruments?.length > 0 && (
@@ -500,6 +506,7 @@ function PlaybookForm({ initial, onCancel, onSave }) {
   const [date, setDate]   = useState(initial?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime]   = useState(initial?.time ?? '');
   const [setupName, setSetupName] = useState(initial?.setup_name ?? '');
+  const [eventKey, setEventKey] = useState(initial?.event_key ?? '');
   const [instruments, setInstruments] = useState(initial?.instruments ?? []);
   const [catalysts, setCatalysts] = useState(initial?.catalysts ?? []);
   const [context, setContext] = useState(initial?.context ?? '');
@@ -524,6 +531,7 @@ function PlaybookForm({ initial, onCancel, onSave }) {
     if (!title.trim()) return;
     onSave({
       title: title.trim(), date, time, setup_name: setupName.trim(),
+      event_key: eventKey.trim() || null,
       instruments, catalysts, context: context.trim(), outcome: outcome.trim(), charts
     });
   }
@@ -571,6 +579,21 @@ function PlaybookForm({ initial, onCancel, onSave }) {
             placeholder="Setup name (optional) — e.g. Bond auction tail fade"
             className="flex-1 bg-bg border border-bg-border rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-green/50"
           />
+        </div>
+        <div>
+          <input
+            list="event-key-options"
+            value={eventKey}
+            onChange={e => setEventKey(e.target.value)}
+            placeholder="Event key (links to release history) — e.g. EIA Crude Oil Inventories"
+            className="w-full bg-bg border border-bg-border rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-green/50"
+          />
+          <datalist id="event-key-options">
+            {EVENT_KEYS.map(k => <option key={k} value={k} />)}
+          </datalist>
+          <p className="text-[11px] text-text-muted mt-1">
+            Tag recurring releases with a consistent key so the morning-prep agent can match this setup's history.
+          </p>
         </div>
       </section>
 

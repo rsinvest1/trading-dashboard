@@ -231,6 +231,15 @@ function migrateV2toV3(state) {
   };
 }
 
+// ── Migration v3 → v4: add `event_key` to playbooks so the morning-prep agent
+//    can match a calendar release to its historical playbooks. ──────────────
+function migrateV3toV4(state) {
+  return {
+    ...state,
+    playbooks: (state?.playbooks || []).map(p => ({ event_key: null, ...p }))
+  };
+}
+
 export const useStore = create(
   persist(
     (set, get) => ({
@@ -568,6 +577,7 @@ export const useStore = create(
           date: p.date ?? new Date().toISOString().slice(0, 10),
           time: p.time ?? '',
           setup_name: p.setup_name ?? '',
+          event_key: p.event_key ?? null,   // links playbook to a recurring release event
           instruments: p.instruments ?? [],
           catalysts: p.catalysts ?? [],
           context: p.context ?? '',
@@ -659,12 +669,13 @@ export const useStore = create(
     }),
     {
       name: 'trading-dashboard-v2',
-      version: 3,
+      version: 4,
       migrate: (persisted, fromVersion) => {
         let next = persisted || {};
         if (fromVersion < 1) next = migrateV0toV1(next);
         if (fromVersion < 2) next = migrateV1toV2(next);
         if (fromVersion < 3) next = migrateV2toV3(next);
+        if (fromVersion < 4) next = migrateV3toV4(next);
         return next;
       }
     }
