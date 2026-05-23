@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Star, ImagePlus, Trash2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { fmtMoney } from '../utils/calculations';
+import { fmtMoney, fmtDuration } from '../utils/calculations';
 import TpSlEditor from './TpSlEditor';
 import TagPicker from './TagPicker';
 import RulesChecklist from './RulesChecklist';
@@ -197,8 +197,9 @@ export default function TradeDetailDrawer({ tradeId, onClose }) {
             </div>
           </div>
 
-          <div className="text-[11px] text-text-muted">
-            Account: <span className="text-text-secondary">{account?.firm_name ?? '—'}</span>
+          <div className="flex items-center justify-between gap-2 text-[11px] text-text-muted">
+            <span>Account: <span className="text-text-secondary">{account?.firm_name ?? '—'}</span></span>
+            <span>Hold: <span className="text-text-secondary font-mono">{fmtDuration(trade.duration_sec)}</span></span>
           </div>
 
           {/* Risk & Targets */}
