@@ -18,8 +18,14 @@ export const INSTRUMENTS = {
   ZW:  { name: 'Wheat',        pointValue: 50 },
   NG:  { name: 'Natural Gas',  pointValue: 10000 },
   NKD: { name: 'Nikkei 225 ($)', pointValue: 5 },
+  HG:  { name: 'Copper',       pointValue: 25000 },
   '6A': { name: 'AUD/USD',     pointValue: 100000 },
-  '6J': { name: 'JPY/USD',     pointValue: 12500000 }
+  '6J': { name: 'JPY/USD',     pointValue: 12500000 },
+  '6B': { name: 'GBP/USD',     pointValue: 62500 },
+  '6E': { name: 'EUR/USD',     pointValue: 125000 },
+  '6C': { name: 'CAD/USD',     pointValue: 100000 },
+  '6S': { name: 'CHF/USD',     pointValue: 125000 },
+  '6N': { name: 'NZD/USD',     pointValue: 100000 }
 };
 
 export const TICKERS = Object.keys(INSTRUMENTS);
@@ -31,7 +37,8 @@ export function pointValue(ticker) {
 // Ordered longest-first so prefix matching prefers micros and multi-letter roots.
 const TICKER_PREFIXES = [
   'MNQ', 'MGC', 'MCL', 'MES', 'MYM', 'M2K', 'SIL', 'NKD',
-  'NQ', 'ES', 'GC', 'CL', 'YM', 'ZS', 'ZC', 'ZW', 'SI', 'RTY', 'NG', '6A', '6J'
+  'NQ', 'ES', 'GC', 'CL', 'YM', 'ZS', 'ZC', 'ZW', 'SI', 'RTY', 'NG', 'HG',
+  '6A', '6J', '6B', '6E', '6C', '6S', '6N'
 ];
 
 export function tickerFromSymbol(symbol) {

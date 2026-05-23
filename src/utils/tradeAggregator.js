@@ -47,6 +47,11 @@ function makeTrade(fills, account, symbol, side) {
 
   const date = dateStr(first.datetime);
   const time = timeStr(first.datetime);
+  // Hold time: first fill (open) → last fill (close). Fills arrive chronological.
+  const last = fills[fills.length - 1];
+  const duration_sec = (first?.datetime && last?.datetime)
+    ? Math.max(0, Math.round((last.datetime - first.datetime) / 1000))
+    : null;
   const entry = entryPrice != null ? Number(entryPrice.toFixed(4)) : null;
   const exit  = exitPrice  != null ? Number(exitPrice.toFixed(4))  : null;
   const pnl   = Number(totalNet.toFixed(2));
@@ -70,6 +75,7 @@ function makeTrade(fills, account, symbol, side) {
     contracts: openContracts,
     entry,
     exit,
+    duration_sec,
     stop_loss_dollars: null,
     pnl,
     fees:    Number(totalFee.toFixed(2)),

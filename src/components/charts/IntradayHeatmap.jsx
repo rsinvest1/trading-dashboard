@@ -29,7 +29,7 @@ export default function IntradayHeatmap() {
   if (!Object.keys(cells).length) return null;
 
   return (
-    <div className="card p-4 h-72 overflow-hidden">
+    <div className="card p-4">
       <h3 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Intraday Heatmap (P&L by hour × day)</h3>
       <div className="flex flex-col gap-1 text-[10px]">
         <div className="grid grid-cols-[40px_repeat(11,1fr)] gap-1">
@@ -44,12 +44,12 @@ export default function IntradayHeatmap() {
             {HOURS.map(h => {
               const cell = cells[`${dow}|${h}`];
               if (!cell) {
-                return <div key={h} className="aspect-square rounded-sm bg-bg-card/50 border border-bg-border" />;
+                return <div key={h} className="h-12 rounded-sm bg-bg-card/50 border border-bg-border" />;
               }
               return (
                 <div
                   key={h}
-                  className="aspect-square rounded-sm border border-bg-border/40 flex items-center justify-center cursor-default"
+                  className="h-12 rounded-sm border border-bg-border/40 flex items-center justify-center cursor-default"
                   style={bgStyle(cell.pnl, maxAbs)}
                   title={`${label} ${h}:00 — ${fmtMoney(cell.pnl)} · ${cell.count} trades · ${cell.winRate.toFixed(0)}% WR`}
                 >

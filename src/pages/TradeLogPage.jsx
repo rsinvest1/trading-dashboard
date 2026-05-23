@@ -5,7 +5,7 @@ import CsvImporter from '../components/CsvImporter';
 import TradeDetailDrawer from '../components/TradeDetailDrawer';
 import QuickAddTrade from '../components/QuickAddTrade';
 import WebhookLiveBadge from '../components/WebhookLiveBadge';
-import { fmtMoney, fmtR, realizedR } from '../utils/calculations';
+import { fmtMoney, fmtR, fmtDuration, realizedR } from '../utils/calculations';
 
 const COLS = [
   { id: 'date',      label: 'Date',      align: 'left'  },
@@ -14,6 +14,7 @@ const COLS = [
   { id: 'contracts', label: 'Qty',       align: 'right' },
   { id: 'entry',     label: 'Entry',     align: 'right' },
   { id: 'exit',      label: 'Exit',      align: 'right' },
+  { id: 'duration_sec', label: 'Hold',   align: 'right' },
   { id: 'pnl',       label: 'Net P&L',   align: 'right' },
   { id: 'r',         label: 'R',         align: 'right' },
   { id: 'fees',      label: 'Fees',      align: 'right' }
@@ -252,6 +253,7 @@ export default function TradeLogPage() {
                     <td className="px-3 py-2 text-right">{t.contracts}</td>
                     <td className="px-3 py-2 text-right">{t.entry ?? '—'}</td>
                     <td className="px-3 py-2 text-right">{t.exit ?? '—'}</td>
+                    <td className="px-3 py-2 text-right text-text-secondary whitespace-nowrap">{fmtDuration(t.duration_sec)}</td>
                     <td className={`px-3 py-2 text-right font-semibold ${t.pnl > 0 ? 'text-accent-green' : t.pnl < 0 ? 'text-accent-red' : ''}`}>
                       {fmtMoney(t.pnl)}
                     </td>

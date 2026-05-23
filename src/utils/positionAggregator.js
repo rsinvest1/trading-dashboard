@@ -59,12 +59,18 @@ export function aggregateDeals(deals) {
   const fees = sorted.reduce((s, d) => s + (Number(d.fees) || 0), 0);
 
   const { date, time } = etDateTime(opening.timestamp);
+  // Hold time: first deal (open) → last deal (flat). Deals are sorted ascending.
+  const closing = sorted[sorted.length - 1];
+  const duration_sec = (opening?.timestamp && closing?.timestamp)
+    ? Math.max(0, Math.round((new Date(closing.timestamp) - new Date(opening.timestamp)) / 1000))
+    : null;
 
   return {
     position_id: first.position_id,
     event_ids:   sorted.map(d => d.event_id),
     date,
     time,
+    duration_sec,
     ticker:    tickerFromSymbol(first.instrument),
     symbol:    first.instrument,
     side:      sideLabel,

@@ -266,3 +266,16 @@ export function fmtR(n) {
   const sign = n >= 0 ? '' : '-';
   return `${sign}${Math.abs(n).toFixed(2)}R`;
 }
+
+// Hold time: position open → flat. Compact human form (e.g. "45s", "5m 12s", "1h 8m").
+export function fmtDuration(sec) {
+  if (sec == null || isNaN(sec) || sec < 0) return '—';
+  const s = Math.round(Number(sec));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return rs ? `${m}m ${rs}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? `${h}h ${rm}m` : `${h}h`;
+}

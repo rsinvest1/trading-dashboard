@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { applyEvents } from '../utils/positionAggregator';
+import { tickerFromSymbol } from '../utils/instruments';
 
 const DEFAULT_BEHAVIOR_TAGS = [
   'Revenge trade', 'FOMO entry', 'Stuck to plan', 'Early exit',
@@ -88,6 +89,7 @@ function tradeDefaults() {
   return {
     tp_levels: [],
     sl_levels: [],
+    duration_sec: null,        // seconds held: position open → flat (TP/SL/exit)
     planned_target_dollars: null,
     planned_risk_dollars: null,
     tags: {},                 // { [categoryId]: [tagId, ...] }
@@ -212,6 +214,20 @@ function migrateV1toV2(state) {
     },
     behaviorState: state?.behaviorState || defaultBehaviorState(),
     overrideLog: state?.overrideLog || []
+  };
+}
+
+// ── Migration v2 → v3: recompute `ticker` from `symbol` so newly-added
+//    instruments (HG, 6B, 6E, …) resolve for already-stored trades, and add
+//    the `duration_sec` field default. ────────────────────────────────────
+function migrateV2toV3(state) {
+  return {
+    ...state,
+    trades: (state?.trades || []).map(t => ({
+      duration_sec: null,
+      ...t,
+      ticker: t.symbol ? tickerFromSymbol(t.symbol) : t.ticker
+    }))
   };
 }
 
@@ -643,11 +659,12 @@ export const useStore = create(
     }),
     {
       name: 'trading-dashboard-v2',
-      version: 2,
+      version: 3,
       migrate: (persisted, fromVersion) => {
         let next = persisted || {};
         if (fromVersion < 1) next = migrateV0toV1(next);
         if (fromVersion < 2) next = migrateV1toV2(next);
+        if (fromVersion < 3) next = migrateV2toV3(next);
         return next;
       }
     }
