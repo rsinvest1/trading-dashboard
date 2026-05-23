@@ -25,17 +25,19 @@ export default function PnlByPlaybookChart() {
     const nameById = Object.fromEntries(
       playbooks.map(p => [p.id, p.title || p.setup_name || `Playbook ${p.date || ''}`])
     );
+    const UNASSIGNED = '__unassigned__';
     const map = {};
     for (const t of trades) {
-      if (!t.playbook_id) continue;            // only trades linked to a playbook
-      const v = (map[t.playbook_id] ||= { pnl: 0, wins: 0, count: 0 });
+      const key = t.playbook_id || UNASSIGNED;  // off-script trades go to one bucket
+      const v = (map[key] ||= { pnl: 0, wins: 0, count: 0 });
       v.pnl += Number(t.pnl) || 0;
       v.count += 1;
       if ((Number(t.pnl) || 0) > 0) v.wins += 1;
     }
     return Object.entries(map)
       .map(([id, v]) => ({
-        name: nameById[id] || 'Unknown',
+        name: id === UNASSIGNED ? 'Unassigned' : (nameById[id] || 'Unknown'),
+        unassigned: id === UNASSIGNED,
         pnl: Number(v.pnl.toFixed(2)),
         count: v.count,
         winRate: v.count ? (v.wins / v.count) * 100 : 0
@@ -59,7 +61,11 @@ export default function PnlByPlaybookChart() {
           <ReferenceLine x={0} stroke="#374151" />
           <Bar dataKey="pnl" radius={[0, 3, 3, 0]}>
             {data.map((d, i) => (
-              <Cell key={i} fill={d.pnl >= 0 ? '#22c55e' : '#ef4444'} />
+              <Cell
+                key={i}
+                fill={d.pnl >= 0 ? '#22c55e' : '#ef4444'}
+                fillOpacity={d.unassigned ? 0.45 : 1}
+              />
             ))}
           </Bar>
         </BarChart>
