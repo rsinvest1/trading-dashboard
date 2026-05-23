@@ -65,6 +65,7 @@ export default function TradeLogPage() {
   const trades    = useStore(s => s.trades);
   const accounts  = useStore(s => s.accounts);
   const strategies = useStore(s => s.strategies);
+  const playbooks = useStore(s => s.playbooks);
   const categories = useStore(s => s.settings.tag_categories || []);
   const clearTrades = useStore(s => s.clearTrades);
 
@@ -83,6 +84,10 @@ export default function TradeLogPage() {
   const strategyById = useMemo(
     () => Object.fromEntries(strategies.map(s => [s.id, s])),
     [strategies]
+  );
+  const playbookById = useMemo(
+    () => Object.fromEntries(playbooks.map(p => [p.id, p])),
+    [playbooks]
   );
   const tickers = useMemo(() => [...new Set(trades.map(t => t.ticker))].sort(), [trades]);
 
@@ -227,6 +232,7 @@ export default function TradeLogPage() {
                 ))}
                 <th className="px-3 py-2 text-right">Account</th>
                 <th className="px-3 py-2">Strategy</th>
+                <th className="px-3 py-2">Playbook</th>
                 <th className="px-3 py-2">Tags</th>
                 <th className="px-3 py-2">Notes</th>
               </tr>
@@ -266,6 +272,14 @@ export default function TradeLogPage() {
                     </td>
                     <td className="px-3 py-2 max-w-[160px] truncate">
                       <StrategyBadge strategy={strat} followedCount={followed} totalRules={totalRules} />
+                    </td>
+                    <td className="px-3 py-2 max-w-[160px] truncate">
+                      {(() => {
+                        const pb = playbookById[t.playbook_id];
+                        if (!pb) return <span className="text-text-muted">—</span>;
+                        const label = pb.title || pb.setup_name || `Playbook ${pb.date || ''}`;
+                        return <span className="text-text-secondary truncate" title={label}>{label}</span>;
+                      })()}
                     </td>
                     <td className="px-3 py-2 max-w-[200px]">
                       <TagPills tags={t.tags} categories={categories} />

@@ -25,13 +25,17 @@ export default function PnlByTickerChart() {
 
   if (!data.length) return null;
 
+  // Grow with the number of instruments so every bar + label is visible
+  // (a fixed height crowded out lower-ranked tickers like NKD).
+  const chartHeight = Math.max(245, data.length * 28);
+
   return (
-    <div className="card p-4 h-72">
+    <div className="card p-4">
       <h3 className="text-sm uppercase tracking-wider text-text-secondary mb-3">P&L by Instrument</h3>
-      <ResponsiveContainer width="100%" height="85%">
+      <ResponsiveContainer width="100%" height={chartHeight}>
         <BarChart data={data} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <XAxis type="number" tickFormatter={v => fmtMoney(v).replace('$', '')} stroke="#6b7280" fontSize={10} />
-          <YAxis type="category" dataKey="key" stroke="#9ca3af" fontSize={11} width={45} />
+          <YAxis type="category" dataKey="key" stroke="#9ca3af" fontSize={11} width={45} interval={0} />
           <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1a2230' }} />
           <ReferenceLine x={0} stroke="#374151" />
           <Bar dataKey="pnl" radius={[0, 3, 3, 0]}>
