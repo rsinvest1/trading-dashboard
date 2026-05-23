@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { TICKERS } from '../utils/instruments';
+import { fmtMoney, fmtPct, fmtR, realizedR } from '../utils/calculations';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -103,7 +104,31 @@ function ChipList({ items, onRemove, color = 'blue' }) {
   );
 }
 
-function PlaybookCard({ playbook, onClick }) {
+function PlaybookStats({ stats }) {
+  const tone = stats.totalPnl > 0 ? 'text-accent-green' : stats.totalPnl < 0 ? 'text-accent-red' : 'text-text-muted';
+  return (
+    <div className="grid grid-cols-4 gap-2 text-[11px] font-mono mb-3">
+      <div>
+        <div className="text-text-muted text-[10px] uppercase tracking-wider">Trades</div>
+        <div className="text-text-primary">{stats.count}</div>
+      </div>
+      <div>
+        <div className="text-text-muted text-[10px] uppercase tracking-wider">Win rate</div>
+        <div className="text-text-primary">{stats.count ? fmtPct(stats.winRate) : '—'}</div>
+      </div>
+      <div>
+        <div className="text-text-muted text-[10px] uppercase tracking-wider">Net P&L</div>
+        <div className={tone}>{fmtMoney(stats.totalPnl)}</div>
+      </div>
+      <div>
+        <div className="text-text-muted text-[10px] uppercase tracking-wider">Avg R</div>
+        <div className="text-text-primary">{fmtR(stats.avgR)}</div>
+      </div>
+    </div>
+  );
+}
+
+function PlaybookCard({ playbook, stats, onClick }) {
   return (
     <button
       onClick={onClick}
@@ -125,6 +150,7 @@ function PlaybookCard({ playbook, onClick }) {
           {playbook.context}
         </p>
       )}
+      {stats && <PlaybookStats stats={stats} />}
       <div className="flex items-center gap-3 text-[11px] text-text-muted">
         {playbook.instruments?.length > 0 && (
           <span className="font-mono">{playbook.instruments.join(' · ')}</span>
@@ -136,7 +162,7 @@ function PlaybookCard({ playbook, onClick }) {
   );
 }
 
-function PlaybookDetail({ playbook, onBack, onEdit, onDelete }) {
+function PlaybookDetail({ playbook, stats, onBack, onEdit, onDelete }) {
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-start justify-between gap-4">
@@ -180,6 +206,15 @@ function PlaybookDetail({ playbook, onBack, onEdit, onDelete }) {
           <ChipList items={playbook.instruments} color="green" />
         )}
       </header>
+
+      {stats && (
+        <section className="card p-4">
+          <PlaybookStats stats={stats} />
+          <p className="text-[11px] text-text-muted -mt-1">
+            Performance of trades linked to this playbook (set via the Playbook column / trade drawer).
+          </p>
+        </section>
+      )}
 
       {playbook.catalysts?.length > 0 && (
         <section>
@@ -616,11 +651,33 @@ function PlaybookForm({ initial, onCancel, onSave }) {
   );
 }
 
+const EMPTY_STATS = { count: 0, wins: 0, losses: 0, winRate: 0, totalPnl: 0, avgR: null };
+
 export default function PlaybookPage() {
   const playbooks      = useStore(s => s.playbooks);
+  const trades         = useStore(s => s.trades);
   const addPlaybook    = useStore(s => s.addPlaybook);
   const updatePlaybook = useStore(s => s.updatePlaybook);
   const deletePlaybook = useStore(s => s.deletePlaybook);
+
+  // Per-playbook performance from trades linked via playbook_id (mirrors Strategies).
+  const stats = useMemo(() => {
+    const out = {};
+    for (const p of playbooks) {
+      const ts = trades.filter(t => t.playbook_id === p.id);
+      const wins = ts.filter(t => t.pnl > 0).length;
+      const losses = ts.filter(t => t.pnl < 0).length;
+      const totalPnl = ts.reduce((acc, t) => acc + (Number(t.pnl) || 0), 0);
+      const rs = ts.map(realizedR).filter(r => r != null);
+      const avgR = rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null;
+      out[p.id] = {
+        count: ts.length, wins, losses,
+        winRate: (wins + losses) ? (wins / (wins + losses)) * 100 : 0,
+        totalPnl, avgR
+      };
+    }
+    return out;
+  }, [playbooks, trades]);
 
   const [view, setView]     = useState('list'); // list | detail | form
   const [activeId, setActive] = useState(null);
@@ -699,6 +756,7 @@ export default function PlaybookPage() {
       <div className="p-6">
         <PlaybookDetail
           playbook={active}
+          stats={stats[active.id] || EMPTY_STATS}
           onBack={() => setView('list')}
           onEdit={openEdit}
           onDelete={handleDelete}
@@ -754,7 +812,12 @@ export default function PlaybookPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(p => (
-            <PlaybookCard key={p.id} playbook={p} onClick={() => openDetail(p.id)} />
+            <PlaybookCard
+              key={p.id}
+              playbook={p}
+              stats={stats[p.id] || EMPTY_STATS}
+              onClick={() => openDetail(p.id)}
+            />
           ))}
           {filtered.length === 0 && (
             <div className="text-sm text-text-muted col-span-full">No playbooks match that filter.</div>
