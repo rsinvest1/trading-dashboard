@@ -68,6 +68,7 @@ export default function TradeLogPage() {
   const playbooks = useStore(s => s.playbooks);
   const categories = useStore(s => s.settings.tag_categories || []);
   const clearTrades = useStore(s => s.clearTrades);
+  const updateTrade = useStore(s => s.updateTrade);
 
   const [importing, setImporting] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
@@ -85,8 +86,8 @@ export default function TradeLogPage() {
     () => Object.fromEntries(strategies.map(s => [s.id, s])),
     [strategies]
   );
-  const playbookById = useMemo(
-    () => Object.fromEntries(playbooks.map(p => [p.id, p])),
+  const playbooksSorted = useMemo(
+    () => [...playbooks].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
     [playbooks]
   );
   const tickers = useMemo(() => [...new Set(trades.map(t => t.ticker))].sort(), [trades]);
@@ -273,13 +274,19 @@ export default function TradeLogPage() {
                     <td className="px-3 py-2 max-w-[160px] truncate">
                       <StrategyBadge strategy={strat} followedCount={followed} totalRules={totalRules} />
                     </td>
-                    <td className="px-3 py-2 max-w-[160px] truncate">
-                      {(() => {
-                        const pb = playbookById[t.playbook_id];
-                        if (!pb) return <span className="text-text-muted">—</span>;
-                        const label = pb.title || pb.setup_name || `Playbook ${pb.date || ''}`;
-                        return <span className="text-text-secondary truncate" title={label}>{label}</span>;
-                      })()}
+                    <td className="px-3 py-2 max-w-[170px]" onClick={e => e.stopPropagation()}>
+                      <select
+                        value={t.playbook_id ?? ''}
+                        onChange={e => updateTrade(t.id, { playbook_id: e.target.value || null })}
+                        className={`w-full max-w-[160px] bg-bg border border-bg-border rounded px-1.5 py-1 text-xs focus:outline-none focus:border-accent-green/50 ${t.playbook_id ? 'text-text-secondary' : 'text-text-muted'}`}
+                      >
+                        <option value="">— none —</option>
+                        {playbooksSorted.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.title || p.setup_name || `Playbook ${p.date || ''}`}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-3 py-2 max-w-[200px]">
                       <TagPills tags={t.tags} categories={categories} />
