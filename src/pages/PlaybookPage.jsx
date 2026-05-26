@@ -710,11 +710,13 @@ function PlaybookForm({ initial, onCancel, onSave }) {
     if (!title.trim()) return;
     const ek = eventKey.trim() || null;
     if (ek && rating.trim()) setEventMeta(ek, { rating: rating.trim() });
+    // Pass initial?.id back so the parent knows whether this is an edit or a new
+    // release — avoids any stale-closure issue with the parent's `editing` state.
     onSave({
       title: title.trim(), date, time, setup_name: setupName.trim(),
       event_key: ek,
       instruments, catalysts, context: context.trim(), outcome: outcome.trim(), charts
-    });
+    }, initial?.id ?? null);
   }
 
   return (
@@ -963,13 +965,17 @@ export default function PlaybookPage() {
 
   function openEdit() { setEditing(active); setView('form'); }
 
-  function handleSave(data) {
-    if (editing?.id) {
-      updatePlaybook(editing.id, data);
+  // existingId is passed back from PlaybookForm.submit() via the second arg — it
+  // is initial?.id (non-null for edits, null for new releases). Using it here
+  // instead of the closed-over `editing?.id` prevents stale-closure bugs when
+  // the parent re-renders between "form opened" and "Save clicked".
+  function handleSave(data, existingId) {
+    if (existingId) {
+      updatePlaybook(existingId, data);
       if (activeEventKey) {
         setView('event');
       } else {
-        setActive(editing.id); // re-assert so active resolves after save
+        setActive(existingId);
         setView('detail');
       }
     } else {
