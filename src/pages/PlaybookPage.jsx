@@ -707,15 +707,18 @@ function PlaybookForm({ initial, onCancel, onSave }) {
   }
 
   function submit() {
-    if (!title.trim()) return;
     const ek = eventKey.trim() || null;
     if (ek && rating.trim()) setEventMeta(ek, { rating: rating.trim() });
     // Pass initial?.id back so the parent knows whether this is an edit or a new
     // release — avoids any stale-closure issue with the parent's `editing` state.
     onSave({
-      title: title.trim(), date, time, setup_name: setupName.trim(),
+      title: title.trim() || 'Untitled release',
+      date, time, setup_name: setupName.trim(),
       event_key: ek,
-      instruments, catalysts, context: context.trim(), outcome: outcome.trim(), charts
+      instruments, catalysts,
+      context: context.trim(),
+      outcome: outcome.trim(),
+      charts,
     }, initial?.id ?? null);
   }
 
@@ -727,8 +730,7 @@ function PlaybookForm({ initial, onCancel, onSave }) {
           <button onClick={onCancel} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">Cancel</button>
           <button
             onClick={submit}
-            disabled={!title.trim()}
-            className="px-3 py-1.5 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft disabled:opacity-40"
+            className="px-3 py-1.5 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
           >
             Save release
           </button>
@@ -972,12 +974,11 @@ export default function PlaybookPage() {
   function handleSave(data, existingId) {
     if (existingId) {
       updatePlaybook(existingId, data);
-      if (activeEventKey) {
-        setView('event');
-      } else {
-        setActive(existingId);
-        setView('detail');
-      }
+      // Always land on the release detail so the user sees every saved field
+      // immediately — they can confirm context/outcome changed before navigating
+      // back to the event list.
+      setActive(existingId);
+      setView('detail');
     } else {
       addPlaybook({ ...data });
       const ek = data.event_key || activeEventKey;
