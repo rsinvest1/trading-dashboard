@@ -226,6 +226,26 @@ function toIsoDate(d) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+// Portuguese month names (accents stripped for matching).
+const PT_MONTH_MAP = {
+  janeiro: 0, fevereiro: 1, marco: 2, abril: 3, maio: 4, junho: 5,
+  julho: 6, agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11
+};
+function normMonth(s) {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+// Parse Portuguese date like "30 de outubro de 2024" or "30 outubro 2024".
+function parsePtDate(text) {
+  const m = /(\d{1,2})\s+(?:de\s+)?([A-Za-zÀ-ɏ]+)(?:\s+de)?\s+(\d{4})/i.exec(text);
+  if (!m) return '';
+  const month = PT_MONTH_MAP[normMonth(m[2])];
+  if (month === undefined) return '';
+  const day = parseInt(m[1], 10);
+  const year = parseInt(m[3], 10);
+  if (year < 2000 || year > 2100 || day < 1 || day > 31) return '';
+  return toIsoDate(new Date(year, month, day));
+}
+
 // Scan the first few lines of a page's text for a date (OneNote renders the
 // page's created date/time just under the title).
 function parseLooseDate(textBlock) {
@@ -236,6 +256,9 @@ function parseLooseDate(textBlock) {
     if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   }
   for (const line of lines) {
+    // Try Portuguese months first.
+    const pt = parsePtDate(line);
+    if (pt) return pt;
     // Trim a leading weekday so Date.parse is happy ("Tuesday, March 24, 2026").
     const cleaned = line.replace(/^[A-Za-z]+day,?\s*/i, '');
     const ts = Date.parse(cleaned);
@@ -293,12 +316,79 @@ export function mapPageToPlaybook(node, images, explicitTitle, splitMethod) {
   };
 }
 
+// ── Date-based page splitting ────────────────────────────────────────────────
+//
+// OneNote files often store one recurring event per page (e.g. "AUD CPI"),
+// with individual dated releases as sections headed by a bare date like
+// "26 Feb 2025" or "30 de outubro de 2024". We detect these date headers and
+// slice the DOM at each one to produce one draft per release date.
+
+const EN_MONTHS_PAT = 'Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?';
+const PT_MONTHS_PAT = 'janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro';
+
+// Matches a line whose ENTIRE content is a date (with optional leading weekday).
+const DATE_HEADER_RE = new RegExp(
+  '^\\s*(?:[A-Za-z]{3,9}day,?\\s*)?' +
+  '(?:' +
+    `\\d{1,2}\\s+(?:de\\s+)?(?:${EN_MONTHS_PAT}|${PT_MONTHS_PAT})(?:\\s+de)?\\s+\\d{4}` +
+    `|(?:${EN_MONTHS_PAT}|${PT_MONTHS_PAT})\\s+\\d{1,2},?\\s+\\d{4}` +
+    '|\\d{4}-\\d{2}-\\d{2}' +
+  ')' +
+  '\\s*$',
+  'i'
+);
+
+// Walk block-level elements; return those whose complete text is a date header.
+function findDateSplitters(root) {
+  const results = [];
+  const seen = new Set();
+  for (const el of root.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6')) {
+    const txt = (el.textContent || '').trim();
+    if (!txt || txt.length > 60 || !DATE_HEADER_RE.test(txt)) continue;
+    // Reject if an ancestor element is already a splitter (avoids double-counting
+    // a container whose only content is the date).
+    let nested = false;
+    let p = el.parentElement;
+    while (p && p !== root) {
+      if (seen.has(p)) { nested = true; break; }
+      p = p.parentElement;
+    }
+    if (nested) continue;
+    seen.add(el);
+    results.push({ el, text: txt, isoDate: parsePtDate(txt) || parseLooseDate(txt) });
+  }
+  return results;
+}
+
+// Slice a document body at date-header elements. Returns an array of drafts
+// (one per date section) or null if fewer than 2 date headers are found.
+function splitByDates(doc, body, images) {
+  const splitters = findDateSplitters(body);
+  if (splitters.length < 2) return null;
+  const drafts = [];
+  for (let i = 0; i < splitters.length; i++) {
+    const range = doc.createRange();
+    range.setStartBefore(splitters[i].el);
+    if (i + 1 < splitters.length) range.setEndBefore(splitters[i + 1].el);
+    else range.setEndAfter(body.lastChild || body);
+    const frag = range.cloneContents();
+    const draft = mapPageToPlaybook(frag, images, splitters[i].text, 'dates');
+    if (splitters[i].isoDate) draft.date = splitters[i].isoDate;
+    drafts.push(draft);
+  }
+  return drafts;
+}
+
 // ── splitPages: one HTML doc → [draft, ...] ─────────────────────────────────
 
 export function splitPages(html, images) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const body = doc.body;
   if (!body) return [];
+
+  // Prefer date-based splitting: each date header = one release.
+  const byDates = splitByDates(doc, body, images);
+  if (byDates) return byDates;
 
   const titles = findTitleCandidates(body);
 
@@ -337,16 +427,22 @@ export function parseOneNoteMhtml(text, sourceName = '') {
   let splitMethod;
 
   if (htmlParts.length > 1) {
-    // OneNote emitted one HTML part per page → clean per-page split.
+    // OneNote emitted one HTML part per page → per-page split.
+    // Within each page, try to further split by date headers (one date = one release).
     splitMethod = 'mime-parts';
     for (const part of htmlParts) {
       const doc = new DOMParser().parseFromString(part.html, 'text/html');
       const body = doc.body;
       if (!body) continue;
-      const titles = findTitleCandidates(body);
-      const explicitTitle =
-        (doc.title && doc.title.trim()) || (titles[0] && titles[0].textContent) || '';
-      drafts.push(mapPageToPlaybook(body, images, explicitTitle, 'mime-parts'));
+      const byDates = splitByDates(doc, body, images);
+      if (byDates && byDates.length >= 2) {
+        drafts.push(...byDates);
+      } else {
+        const titles = findTitleCandidates(body);
+        const explicitTitle =
+          (doc.title && doc.title.trim()) || (titles[0] && titles[0].textContent) || '';
+        drafts.push(mapPageToPlaybook(body, images, explicitTitle, 'mime-parts'));
+      }
     }
   } else {
     // One combined HTML doc → split by in-page title markers.
