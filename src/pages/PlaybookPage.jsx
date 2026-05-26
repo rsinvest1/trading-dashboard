@@ -106,6 +106,22 @@ function ChipList({ items, onRemove, color = 'blue' }) {
   );
 }
 
+const RATING_OPTIONS = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'];
+
+function RatingBadge({ rating, className = '' }) {
+  if (!rating) return null;
+  const tone = /^A/.test(rating)
+    ? 'text-accent-green border-accent-green/30 bg-accent-green/10'
+    : /^B/.test(rating)
+      ? 'text-accent-yellow border-accent-yellow/30 bg-accent-yellow/10'
+      : 'text-text-muted border-bg-border bg-bg-hover';
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 text-xs font-mono rounded border ${tone} ${className}`}>
+      {rating}
+    </span>
+  );
+}
+
 function PlaybookStats({ stats }) {
   const tone = stats.totalPnl > 0 ? 'text-accent-green' : stats.totalPnl < 0 ? 'text-accent-red' : 'text-text-muted';
   return (
@@ -164,7 +180,156 @@ function PlaybookCard({ playbook, stats, onClick }) {
   );
 }
 
-function PlaybookDetail({ playbook, stats, onBack, onEdit, onDelete }) {
+function EventCard({ eventKey, rating, releases, onClick }) {
+  const newest = releases[0];
+  const instruments = [...new Set(releases.flatMap(r => r.instruments || []))];
+  return (
+    <button
+      onClick={onClick}
+      className="card p-4 text-left hover:border-accent-green/40 transition-colors group"
+    >
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <h3 className="font-semibold text-text-primary group-hover:text-accent-green transition-colors leading-snug">
+          {eventKey}
+        </h3>
+        <RatingBadge rating={rating} className="shrink-0 mt-0.5" />
+      </div>
+      <div className="flex items-center gap-3 text-[11px] text-text-muted flex-wrap">
+        {instruments.length > 0 && (
+          <span className="font-mono">{instruments.join(' · ')}</span>
+        )}
+        <span>{releases.length} release{releases.length === 1 ? '' : 's'}</span>
+        {newest && (
+          <span className="ml-auto font-mono">{fmtDateShort(newest.date)}</span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function EventDetail({ eventKey, releases, eventMeta, onBack, onAddRelease, onOpenRelease, onRatingChange, onNextNotesChange }) {
+  const [editingRating, setEditingRating] = useState(false);
+  const [ratingDraft, setRatingDraft] = useState(eventMeta?.rating || '');
+  const [nextNotes, setNextNotes] = useState(eventMeta?.nextReleaseNotes || '');
+
+  function saveRating() {
+    onRatingChange(ratingDraft.trim() || null);
+    setEditingRating(false);
+  }
+
+  return (
+    <div className="space-y-5 max-w-4xl">
+      <div className="flex items-center justify-between gap-4">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
+        >
+          <ArrowLeft size={14} /> All playbooks
+        </button>
+        <button
+          onClick={onAddRelease}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
+        >
+          <Plus size={12} /> Add release
+        </button>
+      </div>
+
+      <header>
+        <div className="flex items-center gap-3 flex-wrap mb-1">
+          <h1 className="text-2xl font-semibold tracking-tight">{eventKey}</h1>
+          {editingRating ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={ratingDraft}
+                onChange={e => setRatingDraft(e.target.value)}
+                onBlur={saveRating}
+                onKeyDown={e => { if (e.key === 'Enter') saveRating(); if (e.key === 'Escape') setEditingRating(false); }}
+                list="rating-options-event"
+                placeholder="A+, A-, B+…"
+                className="bg-bg border border-accent-green/50 rounded px-2 py-0.5 text-xs font-mono w-20 focus:outline-none"
+              />
+              <datalist id="rating-options-event">
+                {RATING_OPTIONS.map(r => <option key={r} value={r} />)}
+              </datalist>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setRatingDraft(eventMeta?.rating || ''); setEditingRating(true); }}
+              className="flex items-center gap-1.5 group/rating"
+            >
+              {eventMeta?.rating
+                ? <RatingBadge rating={eventMeta.rating} />
+                : <span className="text-xs text-text-muted border border-dashed border-bg-border rounded px-2 py-0.5">+ rating</span>
+              }
+              <Edit2 size={11} className="text-text-muted opacity-0 group-hover/rating:opacity-100 transition-opacity" />
+            </button>
+          )}
+        </div>
+        <p className="text-sm text-text-muted">
+          {releases.length} release{releases.length === 1 ? '' : 's'} logged
+        </p>
+      </header>
+
+      <div className="space-y-2">
+        {releases.length === 0 ? (
+          <div className="card p-6 text-center text-sm text-text-muted">
+            No releases yet. Click "Add release" to log the first one.
+          </div>
+        ) : (
+          releases.map(p => (
+            <button
+              key={p.id}
+              onClick={() => onOpenRelease(p.id)}
+              className="card p-4 w-full text-left hover:border-accent-green/40 transition-colors group"
+            >
+              <div className="flex items-start justify-between gap-3 mb-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono text-sm text-text-primary group-hover:text-accent-green transition-colors">
+                    {fmtDateShort(p.date)}{p.time ? ` · ${p.time}` : ''}
+                  </span>
+                  {p.instruments?.length > 0 && (
+                    <span className="text-[11px] text-text-muted font-mono">{p.instruments.join(' · ')}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-text-muted shrink-0">
+                  {p.charts?.length > 0 && (
+                    <span>{p.charts.length} chart{p.charts.length === 1 ? '' : 's'}</span>
+                  )}
+                  {p.outcome && <span className="text-accent-green">✓ outcome</span>}
+                </div>
+              </div>
+              {p.catalysts?.length > 0 && (
+                <div className="text-xs text-text-secondary mb-1.5 leading-relaxed">
+                  {p.catalysts.map(c => c.headline).filter(Boolean).join(' · ')}
+                </div>
+              )}
+              {p.context && (
+                <p className="text-xs text-text-muted line-clamp-2">{p.context}</p>
+              )}
+            </button>
+          ))
+        )}
+      </div>
+
+      <section className="pt-2">
+        <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-2">
+          Settings for next release
+        </h2>
+        <textarea
+          value={nextNotes}
+          onChange={e => setNextNotes(e.target.value)}
+          onBlur={() => onNextNotesChange(nextNotes)}
+          placeholder="Pre-trade setup, bias, levels, instruments to watch for the next occurrence of this event…"
+          rows={5}
+          className="w-full bg-bg-card border border-bg-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-green/50 resize-y"
+        />
+      </section>
+    </div>
+  );
+}
+
+function PlaybookDetail({ playbook, stats, backLabel, onBack, onEdit, onDelete }) {
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-start justify-between gap-4">
@@ -172,7 +337,7 @@ function PlaybookDetail({ playbook, stats, onBack, onEdit, onDelete }) {
           onClick={onBack}
           className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
         >
-          <ArrowLeft size={14} /> All playbooks
+          <ArrowLeft size={14} /> {backLabel || 'All playbooks'}
         </button>
         <div className="flex gap-2">
           <button
@@ -503,16 +668,29 @@ function ChartUploader({ charts, onChange }) {
 }
 
 function PlaybookForm({ initial, onCancel, onSave }) {
+  const playbookEventMeta = useStore(s => s.playbookEventMeta);
+  const setEventMeta      = useStore(s => s.setEventMeta);
+
   const [title, setTitle] = useState(initial?.title ?? '');
   const [date, setDate]   = useState(initial?.date ?? new Date().toISOString().slice(0, 10));
   const [time, setTime]   = useState(initial?.time ?? '');
   const [setupName, setSetupName] = useState(initial?.setup_name ?? '');
   const [eventKey, setEventKey] = useState(initial?.event_key ?? '');
+  const [rating, setRating] = useState(() => {
+    const k = initial?.event_key?.trim();
+    return k ? (playbookEventMeta[k]?.rating || '') : '';
+  });
   const [instruments, setInstruments] = useState(initial?.instruments ?? []);
   const [catalysts, setCatalysts] = useState(initial?.catalysts ?? []);
   const [context, setContext] = useState(initial?.context ?? '');
   const [outcome, setOutcome] = useState(initial?.outcome ?? '');
   const [charts, setCharts]   = useState(initial?.charts ?? []);
+
+  // When the user types a new event key, pull in the stored rating for that event
+  useEffect(() => {
+    const k = eventKey.trim();
+    if (k) setRating(playbookEventMeta[k]?.rating || '');
+  }, [eventKey]); // intentionally omit playbookEventMeta — only fire on key change
 
   function addCatalyst() {
     setCatalysts([...catalysts, { id: uid(), time: '', headline: '', details: '', tags: [] }]);
@@ -530,9 +708,11 @@ function PlaybookForm({ initial, onCancel, onSave }) {
 
   function submit() {
     if (!title.trim()) return;
+    const ek = eventKey.trim() || null;
+    if (ek && rating.trim()) setEventMeta(ek, { rating: rating.trim() });
     onSave({
       title: title.trim(), date, time, setup_name: setupName.trim(),
-      event_key: eventKey.trim() || null,
+      event_key: ek,
       instruments, catalysts, context: context.trim(), outcome: outcome.trim(), charts
     });
   }
@@ -540,7 +720,7 @@ function PlaybookForm({ initial, onCancel, onSave }) {
   return (
     <div className="space-y-5 max-w-4xl">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">{initial ? 'Edit playbook' : 'New playbook'}</h2>
+        <h2 className="text-xl font-semibold">{initial?.id ? 'Edit release' : 'New release'}</h2>
         <div className="flex gap-2">
           <button onClick={onCancel} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">Cancel</button>
           <button
@@ -548,7 +728,7 @@ function PlaybookForm({ initial, onCancel, onSave }) {
             disabled={!title.trim()}
             className="px-3 py-1.5 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft disabled:opacity-40"
           >
-            Save playbook
+            Save release
           </button>
         </div>
       </div>
@@ -582,18 +762,34 @@ function PlaybookForm({ initial, onCancel, onSave }) {
           />
         </div>
         <div>
-          <input
-            list="event-key-options"
-            value={eventKey}
-            onChange={e => setEventKey(e.target.value)}
-            placeholder="Event key (links to release history) — e.g. EIA Crude Oil Inventories"
-            className="w-full bg-bg border border-bg-border rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-green/50"
-          />
+          <div className="flex gap-2">
+            <input
+              list="event-key-options"
+              value={eventKey}
+              onChange={e => setEventKey(e.target.value)}
+              placeholder="Event key — match financialjuice headline exactly, e.g. US ADP Wkly Employment Change"
+              className="flex-1 bg-bg border border-bg-border rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-green/50"
+            />
+            {eventKey.trim() && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <input
+                  list="rating-options-form"
+                  value={rating}
+                  onChange={e => setRating(e.target.value)}
+                  placeholder="Rating"
+                  className="bg-bg border border-bg-border rounded px-2 py-2 text-sm font-mono w-24 focus:outline-none focus:border-accent-green/50"
+                />
+                <datalist id="rating-options-form">
+                  {RATING_OPTIONS.map(r => <option key={r} value={r} />)}
+                </datalist>
+              </div>
+            )}
+          </div>
           <datalist id="event-key-options">
             {EVENT_KEYS.map(k => <option key={k} value={k} />)}
           </datalist>
           <p className="text-[11px] text-text-muted mt-1">
-            Tag recurring releases with a consistent key so the morning-prep agent can match this setup's history.
+            Match the exact financialjuice.com headline. Rating (A+, A-, B+…) is shared across all releases for this event.
           </p>
         </div>
       </section>
@@ -678,13 +874,15 @@ function PlaybookForm({ initial, onCancel, onSave }) {
 const EMPTY_STATS = { count: 0, wins: 0, losses: 0, winRate: 0, totalPnl: 0, avgR: null };
 
 export default function PlaybookPage() {
-  const playbooks      = useStore(s => s.playbooks);
-  const trades         = useStore(s => s.trades);
-  const addPlaybook    = useStore(s => s.addPlaybook);
-  const updatePlaybook = useStore(s => s.updatePlaybook);
-  const deletePlaybook = useStore(s => s.deletePlaybook);
+  const playbooks          = useStore(s => s.playbooks);
+  const trades             = useStore(s => s.trades);
+  const playbookEventMeta  = useStore(s => s.playbookEventMeta);
+  const setEventMeta       = useStore(s => s.setEventMeta);
+  const addPlaybook        = useStore(s => s.addPlaybook);
+  const updatePlaybook     = useStore(s => s.updatePlaybook);
+  const deletePlaybook     = useStore(s => s.deletePlaybook);
 
-  // Per-playbook performance from trades linked via playbook_id (mirrors Strategies).
+  // Per-playbook performance from trades linked via playbook_id.
   const stats = useMemo(() => {
     const out = {};
     for (const p of playbooks) {
@@ -703,10 +901,11 @@ export default function PlaybookPage() {
     return out;
   }, [playbooks, trades]);
 
-  const [view, setView]     = useState('list'); // list | detail | form
-  const [activeId, setActive] = useState(null);
-  const [editing, setEditing] = useState(null);  // playbook being edited or null for new
-  const [filter, setFilter] = useState('');
+  const [view, setView]           = useState('list'); // list | event | detail | form
+  const [activeId, setActive]     = useState(null);
+  const [activeEventKey, setActiveEventKey] = useState(null);
+  const [editing, setEditing]     = useState(null);
+  const [filter, setFilter]       = useState('');
   const [showImporter, setShowImporter] = useState(false);
 
   const sorted = useMemo(
@@ -714,75 +913,114 @@ export default function PlaybookPage() {
     [playbooks]
   );
 
-  const filtered = useMemo(() => {
-    if (!filter.trim()) return sorted;
-    const q = filter.toLowerCase();
-    return sorted.filter(p =>
-      (p.title || '').toLowerCase().includes(q) ||
-      (p.setup_name || '').toLowerCase().includes(q) ||
-      (p.instruments || []).some(i => i.toLowerCase().includes(q)) ||
-      (p.context || '').toLowerCase().includes(q)
-    );
+  // Group sorted playbooks: keyed (by event_key) and ungrouped (no event_key).
+  // Apply filter at the group level — a group is included if its key matches OR
+  // any of its releases match.
+  const { groups, ungrouped } = useMemo(() => {
+    const q = filter.toLowerCase().trim();
+    const keyed = {};
+    const ung = [];
+    for (const p of sorted) {
+      const matches = !q ||
+        (p.event_key || '').toLowerCase().includes(q) ||
+        (p.title || '').toLowerCase().includes(q) ||
+        (p.setup_name || '').toLowerCase().includes(q) ||
+        (p.instruments || []).some(i => i.toLowerCase().includes(q)) ||
+        (p.context || '').toLowerCase().includes(q);
+      if (!matches) continue;
+      if (p.event_key) {
+        if (!keyed[p.event_key]) keyed[p.event_key] = [];
+        keyed[p.event_key].push(p);
+      } else {
+        ung.push(p);
+      }
+    }
+    return { groups: keyed, ungrouped: ung };
   }, [sorted, filter]);
 
   const active = playbooks.find(p => p.id === activeId);
+  const activeReleases = activeEventKey
+    ? sorted.filter(p => p.event_key === activeEventKey)
+    : [];
 
-  function openDetail(id) { setActive(id); setView('detail'); }
-  function openNew()      { setEditing(null); setView('form'); }
-  function openEdit()     { setEditing(active); setView('form'); }
+  function openEventDetail(key) {
+    setActiveEventKey(key);
+    setView('event');
+  }
+
+  function openDetail(id, fromEventKey = null) {
+    setActive(id);
+    if (fromEventKey !== null) setActiveEventKey(fromEventKey);
+    setView('detail');
+  }
+
+  function openNew() { setEditing(null); setView('form'); }
+
+  function openNewRelease(prefillEventKey) {
+    setEditing({ event_key: prefillEventKey });
+    setView('form');
+  }
+
+  function openEdit() { setEditing(active); setView('form'); }
 
   function handleSave(data) {
-    if (editing) updatePlaybook(editing.id, data);
-    else {
-      const id = (() => {
-        const newId = Math.random().toString(36).slice(2, 10);
-        addPlaybook({ ...data });
-        return newId;
-      })();
-      // jump to the just-added one (it'll be the latest with that title/date)
-      setTimeout(() => {
-        const latest = useStore.getState().playbooks
-          .filter(p => p.title === data.title && p.date === data.date)
-          .pop();
-        if (latest) { setActive(latest.id); setView('detail'); }
-        else setView('list');
-      }, 0);
-      return;
+    if (editing?.id) {
+      updatePlaybook(editing.id, data);
+      if (activeEventKey) {
+        setView('event');
+      } else {
+        setActive(editing.id); // re-assert so active resolves after save
+        setView('detail');
+      }
+    } else {
+      addPlaybook({ ...data });
+      const ek = data.event_key || activeEventKey;
+      if (ek) {
+        setActiveEventKey(ek);
+        setView('event');
+      } else {
+        setView('list');
+      }
     }
-    setView('detail');
   }
 
   function handleDelete() {
     if (!active) return;
-    if (!confirm(`Delete playbook "${active.title}"?`)) return;
+    if (!confirm(`Delete this release?`)) return;
     deletePlaybook(active.id);
-    setView('list');
     setActive(null);
+    setView(activeEventKey ? 'event' : 'list');
   }
 
-  function seedSample() {
-    addPlaybook(SAMPLE_PLAYBOOK);
-  }
+  function seedSample() { addPlaybook(SAMPLE_PLAYBOOK); }
 
+  // ── Form view ────────────────────────────────────────────────────────────
   if (view === 'form') {
+    function cancelReturn() {
+      if (editing?.id) return setView(activeEventKey ? 'event' : 'detail');
+      return setView(activeEventKey ? 'event' : 'list');
+    }
     return (
       <div className="p-6">
         <PlaybookForm
+          key={editing?.id ?? 'new'}
           initial={editing}
-          onCancel={() => setView(active ? 'detail' : 'list')}
+          onCancel={cancelReturn}
           onSave={handleSave}
         />
       </div>
     );
   }
 
+  // ── Release detail view ──────────────────────────────────────────────────
   if (view === 'detail' && active) {
     return (
       <div className="p-6">
         <PlaybookDetail
           playbook={active}
           stats={stats[active.id] || EMPTY_STATS}
-          onBack={() => setView('list')}
+          backLabel={activeEventKey ? activeEventKey : 'All playbooks'}
+          onBack={() => activeEventKey ? setView('event') : setView('list')}
           onEdit={openEdit}
           onDelete={handleDelete}
         />
@@ -790,13 +1028,36 @@ export default function PlaybookPage() {
     );
   }
 
+  // ── Event detail view ────────────────────────────────────────────────────
+  if (view === 'event' && activeEventKey) {
+    return (
+      <div className="p-6">
+        <EventDetail
+          eventKey={activeEventKey}
+          releases={activeReleases}
+          eventMeta={playbookEventMeta[activeEventKey]}
+          onBack={() => setView('list')}
+          onAddRelease={() => openNewRelease(activeEventKey)}
+          onOpenRelease={id => openDetail(id, activeEventKey)}
+          onRatingChange={r => setEventMeta(activeEventKey, { rating: r })}
+          onNextNotesChange={notes => setEventMeta(activeEventKey, { nextReleaseNotes: notes })}
+        />
+      </div>
+    );
+  }
+
+  // ── List view ────────────────────────────────────────────────────────────
+  const hasAny = playbooks.length > 0;
+  const groupEntries = Object.entries(groups);
+  const totalVisible = groupEntries.length + ungrouped.length;
+
   return (
     <div className="p-6 space-y-4 max-w-[1400px]">
       <div className="flex items-baseline justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Playbook</h1>
           <p className="text-sm text-text-secondary mt-1">
-            One page per setup — catalysts, context, charts. Add a new entry on the day a setup occurs.
+            Events grouped by release key. Click an event to see its release history.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -810,31 +1071,31 @@ export default function PlaybookPage() {
             onClick={openNew}
             className="flex items-center gap-1 px-3 py-2 text-sm bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
           >
-            <Plus size={14} /> New playbook
+            <Plus size={14} /> New release
           </button>
         </div>
       </div>
 
       {showImporter && <OneNotePlaybookImporter onClose={() => setShowImporter(false)} />}
 
-      {playbooks.length > 0 && (
+      {hasAny && (
         <input
           value={filter}
           onChange={e => setFilter(e.target.value)}
-          placeholder="Filter by title, setup, instrument, or context…"
+          placeholder="Filter by event key, instrument, or context…"
           className="w-full max-w-md bg-bg-card border border-bg-border rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-green/50"
         />
       )}
 
-      {playbooks.length === 0 ? (
+      {!hasAny ? (
         <div className="card p-10 text-center space-y-3">
           <div className="text-text-secondary">No playbooks yet.</div>
-          <div className="flex gap-2 justify-center">
+          <div className="flex gap-2 justify-center flex-wrap">
             <button
               onClick={openNew}
               className="px-4 py-2 text-sm bg-accent-green text-bg rounded font-medium"
             >
-              + Create your first playbook
+              + Create your first release
             </button>
             <button
               onClick={() => setShowImporter(true)}
@@ -851,17 +1112,47 @@ export default function PlaybookPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map(p => (
-            <PlaybookCard
-              key={p.id}
-              playbook={p}
-              stats={stats[p.id] || EMPTY_STATS}
-              onClick={() => openDetail(p.id)}
-            />
-          ))}
-          {filtered.length === 0 && (
-            <div className="text-sm text-text-muted col-span-full">No playbooks match that filter.</div>
+        <div className="space-y-6">
+          {/* Grouped event cards */}
+          {groupEntries.length > 0 && (
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {groupEntries.map(([key, releases]) => (
+                  <EventCard
+                    key={key}
+                    eventKey={key}
+                    rating={playbookEventMeta[key]?.rating}
+                    releases={releases}
+                    onClick={() => openEventDetail(key)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Ungrouped (no event_key) — legacy/flat style */}
+          {ungrouped.length > 0 && (
+            <div>
+              {groupEntries.length > 0 && (
+                <h2 className="text-xs uppercase tracking-wider text-text-muted mb-3">
+                  Uncategorized (no event key)
+                </h2>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {ungrouped.map(p => (
+                  <PlaybookCard
+                    key={p.id}
+                    playbook={p}
+                    stats={stats[p.id] || EMPTY_STATS}
+                    onClick={() => { setActiveEventKey(null); openDetail(p.id, null); }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {totalVisible === 0 && filter && (
+            <div className="text-sm text-text-muted">No playbooks match that filter.</div>
           )}
         </div>
       )}

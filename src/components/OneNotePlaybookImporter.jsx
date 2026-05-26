@@ -92,11 +92,12 @@ export default function OneNotePlaybookImporter({ onClose }) {
 
   async function confirmImport() {
     setStage('importing');
+    // Apply bulk event key to any draft that still has none
+    const fallbackKey = bulkEventKey.trim() || null;
     const out = [];
     for (const d of selected) {
       let charts = [];
       if (includeImages && d.charts.length) {
-        charts = [];
         for (const c of d.charts) {
           const dataUrl = await downscaleDataUrl(c.dataUrl);
           charts.push({ id: c.id, dataUrl, caption: c.caption || '' });
@@ -106,7 +107,7 @@ export default function OneNotePlaybookImporter({ onClose }) {
         title: (d.title || '').trim() || 'Untitled OneNote page',
         date: d.date || '',
         setup_name: '',
-        event_key: (d.event_key || '').trim() || null,
+        event_key: (d.event_key || '').trim() || fallbackKey,
         instruments: d.instruments || [],
         catalysts: [],
         context: d.context || '',
@@ -124,7 +125,7 @@ export default function OneNotePlaybookImporter({ onClose }) {
       <div className="bg-bg-card border border-bg-border rounded-lg w-full max-w-3xl max-h-[90vh] overflow-auto">
         <div className="flex items-center justify-between p-4 border-b border-bg-border">
           <h2 className="font-semibold flex items-center gap-2">
-            <BookOpen size={16} /> Import Playbooks from OneNote
+            <BookOpen size={16} /> Import Releases from OneNote
           </h2>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
             <X size={18} />
@@ -169,7 +170,7 @@ export default function OneNotePlaybookImporter({ onClose }) {
                   <div className="text-xl font-semibold font-mono">{files.length}</div>
                 </div>
                 <div className="card p-3">
-                  <div className="stat-label">Playbooks</div>
+                  <div className="stat-label">Releases</div>
                   <div className="text-xl font-semibold font-mono text-accent-green">{selected.length}</div>
                 </div>
                 <div className="card p-3">
@@ -204,24 +205,21 @@ export default function OneNotePlaybookImporter({ onClose }) {
 
               {/* Bulk controls */}
               <div className="card p-3 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-                  <div className="flex-1">
-                    <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Apply one event key to all</div>
-                    <input
-                      list="onenote-event-keys"
-                      value={bulkEventKey}
-                      onChange={e => setBulkEventKey(e.target.value)}
-                      placeholder="e.g. US 2-Year Note Auction"
-                      className="w-full bg-bg border border-bg-border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-accent-green/50"
-                    />
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                    Event key — applies to all releases in this file
                   </div>
-                  <button
-                    onClick={applyBulkKey}
-                    disabled={!bulkEventKey.trim()}
-                    className="px-3 py-1.5 text-xs border border-bg-border rounded text-text-secondary hover:text-accent-green hover:border-accent-green/40 disabled:opacity-40"
-                  >
-                    Apply to all
-                  </button>
+                  <input
+                    list="onenote-event-keys"
+                    value={bulkEventKey}
+                    onChange={e => setBulkEventKey(e.target.value)}
+                    onBlur={applyBulkKey}
+                    placeholder="e.g. Australia CPI  ·  US ADP Wkly Employment Change"
+                    className="w-full bg-bg border border-bg-border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-accent-green/50"
+                  />
+                  <p className="text-[11px] text-text-muted mt-1">
+                    All releases in this file belong to one recurring event. Tab out or select from the list to apply.
+                  </p>
                 </div>
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
@@ -274,13 +272,11 @@ export default function OneNotePlaybookImporter({ onClose }) {
                             className="bg-bg border border-bg-border rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-accent-green/50"
                           />
                         </div>
-                        <input
-                          list="onenote-event-keys"
-                          value={d.event_key || ''}
-                          onChange={e => patchDraft(i, { event_key: e.target.value })}
-                          placeholder="Event key (optional) — links recurring releases for history/stats"
-                          className="w-full bg-bg border border-bg-border rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-green/50"
-                        />
+                        {d.event_key && (
+                          <span className="inline-flex items-center px-2 py-0.5 text-[10px] rounded border border-accent-blue/30 bg-accent-blue/10 text-accent-blue font-mono">
+                            {d.event_key}
+                          </span>
+                        )}
                         {d.context && (
                           <p className="text-[11px] text-text-secondary line-clamp-2 whitespace-pre-line">
                             {d.context}
@@ -326,7 +322,7 @@ export default function OneNotePlaybookImporter({ onClose }) {
                 >
                   {selected.length === 0
                     ? 'Select at least one'
-                    : `Import ${selected.length} playbook${selected.length === 1 ? '' : 's'}`}
+                    : `Import ${selected.length} release${selected.length === 1 ? '' : 's'}${bulkEventKey.trim() ? ` · ${bulkEventKey.trim()}` : ''}`}
                 </button>
               </div>
             </>
@@ -334,7 +330,7 @@ export default function OneNotePlaybookImporter({ onClose }) {
 
           {stage === 'importing' && (
             <div className="text-center py-10 space-y-3">
-              <div className="text-sm text-text-secondary">Importing & downscaling charts…</div>
+              <div className="text-sm text-text-secondary">Importing releases & downscaling charts…</div>
             </div>
           )}
 
@@ -344,7 +340,7 @@ export default function OneNotePlaybookImporter({ onClose }) {
                 <Check size={32} className="text-accent-green" />
               </div>
               <div className="text-lg font-semibold">
-                Imported {importedCount} playbook{importedCount === 1 ? '' : 's'}
+                Imported {importedCount} release{importedCount === 1 ? '' : 's'}
               </div>
               <div className="text-sm text-text-secondary">
                 Added to your Playbook library — your existing playbooks and trades were left untouched.
