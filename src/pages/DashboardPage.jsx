@@ -10,6 +10,7 @@ import PnlByTickerChart from '../components/charts/PnlByTickerChart';
 import PnlByPlaybookChart from '../components/charts/PnlByPlaybookChart';
 import DayOfWeekChart from '../components/charts/DayOfWeekChart';
 import IntradayHeatmap from '../components/charts/IntradayHeatmap';
+import OvernightHeatmap from '../components/charts/OvernightHeatmap';
 import StrategyAnalytics from '../components/charts/StrategyAnalytics';
 import {
   totalPnL, winLossCounts, winRate, profitFactor, avgRR, avgWin, avgLoss,
@@ -148,6 +149,9 @@ export default function DashboardPage() {
           <DayOfWeekChart />
           <div className="lg:col-span-2">
             <IntradayHeatmap />
+          </div>
+          <div className="lg:col-span-2">
+            <OvernightHeatmap />
           </div>
           <div className="lg:col-span-2">
             <PnlByPlaybookChart />
