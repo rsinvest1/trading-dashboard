@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Star, ImagePlus, Trash2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { useImage, putImage, deleteImage, newImageId } from '../utils/imageStore';
 import { fmtMoney, fmtDuration } from '../utils/calculations';
 import TpSlEditor from './TpSlEditor';
 import TagPicker from './TagPicker';
@@ -34,19 +35,21 @@ function StarRating({ value, onChange }) {
   );
 }
 
-async function fileToDataUrl(file, maxDim = 1600) {
+async function fileToDataUrl(file, maxDim = 1280, quality = 0.7) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        if (scale === 1) return resolve(reader.result);
         const canvas = document.createElement('canvas');
-        canvas.width  = Math.round(img.width  * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
+        canvas.width  = Math.max(1, Math.round(img.width  * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = reject;
       img.src = reader.result;
@@ -56,19 +59,23 @@ async function fileToDataUrl(file, maxDim = 1600) {
   });
 }
 
+// `value` is an image id (→ IndexedDB); `onChange(imageId | null)`.
 function ScreenshotSlot({ value, onChange }) {
   const fileRef = useRef(null);
+  const url = useImage(value);
   async function pick(file) {
     if (!file || !file.type.startsWith('image/')) return;
     const dataUrl = await fileToDataUrl(file);
-    onChange(dataUrl);
+    const imageId = newImageId();
+    await putImage(imageId, dataUrl);
+    onChange(imageId);
   }
   if (value) {
     return (
       <div className="relative group">
-        <img src={value} alt="screenshot" className="w-full rounded border border-bg-border" />
+        <img src={url || undefined} alt="screenshot" className="w-full rounded border border-bg-border" />
         <button
-          onClick={() => onChange(null)}
+          onClick={() => { deleteImage(value); onChange(null); }}
           className="absolute top-2 right-2 p-1.5 bg-black/60 text-text-secondary hover:text-accent-red rounded opacity-0 group-hover:opacity-100 transition-opacity"
           title="Remove"
         >
@@ -261,8 +268,8 @@ export default function TradeDetailDrawer({ tradeId, onClose }) {
           {/* Screenshot */}
           <Section title="Screenshot">
             <ScreenshotSlot
-              value={trade.screenshot}
-              onChange={v => u({ screenshot: v })}
+              value={trade.screenshot_id}
+              onChange={v => u({ screenshot_id: v })}
             />
           </Section>
         </div>

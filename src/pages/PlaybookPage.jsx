@@ -7,6 +7,7 @@ import { useStore } from '../store/useStore';
 import { TICKERS } from '../utils/instruments';
 import { fmtMoney, fmtPct, fmtR, realizedR } from '../utils/calculations';
 import { EVENT_KEYS } from '../utils/events';
+import { useImage, putImage, newImageId } from '../utils/imageStore';
 import OneNotePlaybookImporter from '../components/OneNotePlaybookImporter';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -122,6 +123,41 @@ function RatingBadge({ rating, className = '' }) {
   );
 }
 
+// Shared inline editor for event-key text (create / rename / assign). Commits on
+// Save or Enter, cancels on Escape. Datalist autocompletes from `options`.
+function InlineKeyInput({ initial = '', placeholder, options = [], onCommit, onCancel }) {
+  const [val, setVal] = useState(initial);
+  const listId = useRef(`evk-${uid()}`).current;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <input
+        autoFocus
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); onCommit(val); }
+          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        }}
+        list={listId}
+        placeholder={placeholder}
+        className="bg-bg border border-accent-green/50 rounded px-2 py-1 text-sm focus:outline-none min-w-[16rem]"
+      />
+      <datalist id={listId}>
+        {options.map(k => <option key={k} value={k} />)}
+      </datalist>
+      <button
+        onClick={() => onCommit(val)}
+        className="text-xs px-2 py-1 bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
+      >
+        Save
+      </button>
+      <button onClick={onCancel} className="text-xs px-2 py-1 text-text-secondary hover:text-text-primary">
+        Cancel
+      </button>
+    </span>
+  );
+}
+
 function PlaybookStats({ stats }) {
   const tone = stats.totalPnl > 0 ? 'text-accent-green' : stats.totalPnl < 0 ? 'text-accent-red' : 'text-text-muted';
   return (
@@ -180,35 +216,45 @@ function PlaybookCard({ playbook, stats, onClick }) {
   );
 }
 
-function EventCard({ eventKey, rating, releases, onClick }) {
+function EventCard({ eventKey, rating, releases, onClick, onDelete }) {
   const newest = releases[0];
   const instruments = [...new Set(releases.flatMap(r => r.instruments || []))];
   return (
-    <button
-      onClick={onClick}
-      className="card p-4 text-left hover:border-accent-green/40 transition-colors group"
-    >
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <h3 className="font-semibold text-text-primary group-hover:text-accent-green transition-colors leading-snug">
-          {eventKey}
-        </h3>
-        <RatingBadge rating={rating} className="shrink-0 mt-0.5" />
-      </div>
-      <div className="flex items-center gap-3 text-[11px] text-text-muted flex-wrap">
-        {instruments.length > 0 && (
-          <span className="font-mono">{instruments.join(' · ')}</span>
-        )}
-        <span>{releases.length} release{releases.length === 1 ? '' : 's'}</span>
-        {newest && (
-          <span className="ml-auto font-mono">{fmtDateShort(newest.date)}</span>
-        )}
-      </div>
-    </button>
+    <div className="relative group">
+      <button
+        onClick={onClick}
+        className="card p-4 text-left w-full hover:border-accent-green/40 transition-colors"
+      >
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <h3 className="font-semibold text-text-primary group-hover:text-accent-green transition-colors leading-snug pr-6">
+            {eventKey}
+          </h3>
+          <RatingBadge rating={rating} className="shrink-0 mt-0.5" />
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-text-muted flex-wrap">
+          {instruments.length > 0 && (
+            <span className="font-mono">{instruments.join(' · ')}</span>
+          )}
+          <span>{releases.length} release{releases.length === 1 ? '' : 's'}</span>
+          {newest && (
+            <span className="ml-auto font-mono">{fmtDateShort(newest.date)}</span>
+          )}
+        </div>
+      </button>
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        title="Delete event key"
+        className="absolute top-2 right-2 p-1 rounded bg-bg/90 text-text-muted hover:text-accent-red opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
   );
 }
 
-function EventDetail({ eventKey, releases, eventMeta, onBack, onAddRelease, onOpenRelease, onRatingChange, onNextNotesChange }) {
+function EventDetail({ eventKey, releases, eventMeta, eventKeyOptions, onBack, onAddRelease, onOpenRelease, onRatingChange, onNextNotesChange, onRename, onDelete }) {
   const [editingRating, setEditingRating] = useState(false);
+  const [editingName, setEditingName] = useState(false);
   const [ratingDraft, setRatingDraft] = useState(eventMeta?.rating || '');
   const [nextNotes, setNextNotes] = useState(eventMeta?.nextReleaseNotes || '');
 
@@ -226,18 +272,49 @@ function EventDetail({ eventKey, releases, eventMeta, onBack, onAddRelease, onOp
         >
           <ArrowLeft size={14} /> All playbooks
         </button>
-        <button
-          onClick={onAddRelease}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
-        >
-          <Plus size={12} /> Add release
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={onDelete}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-text-secondary hover:text-accent-red border border-bg-border rounded"
+          >
+            <Trash2 size={12} /> Delete event
+          </button>
+          <button
+            onClick={onAddRelease}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
+          >
+            <Plus size={12} /> Add release
+          </button>
+        </div>
       </div>
 
       <header>
         <div className="flex items-center gap-3 flex-wrap mb-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{eventKey}</h1>
-          {editingRating ? (
+          {editingName ? (
+            <InlineKeyInput
+              initial={eventKey}
+              placeholder="Rename — or type an existing key to merge into it"
+              options={eventKeyOptions}
+              onCommit={(val) => {
+                const v = val.trim();
+                setEditingName(false);
+                if (v && v !== eventKey) onRename(v);
+              }}
+              onCancel={() => setEditingName(false)}
+            />
+          ) : (
+            <div className="flex items-center gap-2 group/name">
+              <h1 className="text-2xl font-semibold tracking-tight">{eventKey}</h1>
+              <button
+                onClick={() => setEditingName(true)}
+                title="Rename event key"
+                className="text-text-muted hover:text-text-primary opacity-0 group-hover/name:opacity-100 transition-opacity"
+              >
+                <Edit2 size={14} />
+              </button>
+            </div>
+          )}
+          {!editingName && (editingRating ? (
             <div className="flex items-center gap-1.5">
               <input
                 autoFocus
@@ -264,7 +341,7 @@ function EventDetail({ eventKey, releases, eventMeta, onBack, onAddRelease, onOp
               }
               <Edit2 size={11} className="text-text-muted opacity-0 group-hover/rating:opacity-100 transition-opacity" />
             </button>
-          )}
+          ))}
         </div>
         <p className="text-sm text-text-muted">
           {releases.length} release{releases.length === 1 ? '' : 's'} logged
@@ -329,7 +406,23 @@ function EventDetail({ eventKey, releases, eventMeta, onBack, onAddRelease, onOp
   );
 }
 
-function PlaybookDetail({ playbook, stats, backLabel, onBack, onEdit, onDelete }) {
+// Full-size chart in the release detail; resolves its image from IndexedDB.
+function DetailChart({ chart }) {
+  const url = useImage(chart.imageId);
+  return (
+    <div className="card p-2">
+      {url
+        ? <img src={url} alt={chart.caption || ''} className="w-full rounded" />
+        : <div className="w-full h-40 rounded bg-bg-hover" />}
+      {chart.caption && (
+        <div className="text-xs text-text-secondary mt-2 px-1">{chart.caption}</div>
+      )}
+    </div>
+  );
+}
+
+function PlaybookDetail({ playbook, stats, backLabel, eventKeyOptions, onBack, onEdit, onDelete, onAssignEventKey }) {
+  const [editingKey, setEditingKey] = useState(false);
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-start justify-between gap-4">
@@ -368,10 +461,39 @@ function PlaybookDetail({ playbook, stats, backLabel, onBack, onEdit, onDelete }
               <span className="text-accent-yellow">{playbook.setup_name}</span>
             </>
           )}
-          {playbook.event_key && (
+          {editingKey ? (
+            <InlineKeyInput
+              initial={playbook.event_key || ''}
+              placeholder="Event key — match the financialjuice headline"
+              options={eventKeyOptions}
+              onCommit={(val) => { setEditingKey(false); onAssignEventKey(val.trim() || null); }}
+              onCancel={() => setEditingKey(false)}
+            />
+          ) : playbook.event_key ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border border-accent-blue/30 bg-accent-blue/10 text-accent-blue font-mono">
               {playbook.event_key}
+              <button
+                onClick={() => setEditingKey(true)}
+                title="Change event key"
+                className="opacity-70 hover:opacity-100"
+              >
+                <Edit2 size={10} />
+              </button>
+              <button
+                onClick={() => onAssignEventKey(null)}
+                title="Remove from event (move to Uncategorized)"
+                className="opacity-70 hover:opacity-100"
+              >
+                <X size={10} />
+              </button>
             </span>
+          ) : (
+            <button
+              onClick={() => setEditingKey(true)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] text-text-muted border border-dashed border-bg-border rounded hover:text-accent-green hover:border-accent-green/40"
+            >
+              <Plus size={10} /> Assign event key
+            </button>
           )}
         </div>
         {playbook.instruments?.length > 0 && (
@@ -432,12 +554,7 @@ function PlaybookDetail({ playbook, stats, backLabel, onBack, onEdit, onDelete }
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {playbook.charts.map(c => (
-              <div key={c.id} className="card p-2">
-                <img src={c.dataUrl} alt={c.caption || ''} className="w-full rounded" />
-                {c.caption && (
-                  <div className="text-xs text-text-secondary mt-2 px-1">{c.caption}</div>
-                )}
-              </div>
+              <DetailChart key={c.id} chart={c} />
             ))}
           </div>
         </section>
@@ -495,19 +612,24 @@ function CatalystRow({ catalyst, onChange, onRemove }) {
   );
 }
 
-async function fileToDataUrl(file, maxDim = 1600) {
+// Read a File and re-encode through a canvas: cap the longest side and force
+// JPEG so even large PNG snips shrink. Images live in IndexedDB now, but smaller
+// is still better for backup size + memory.
+async function fileToDataUrl(file, maxDim = 1280, quality = 0.7) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        if (scale === 1) return resolve(reader.result);
         const canvas = document.createElement('canvas');
-        canvas.width  = Math.round(img.width  * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
+        canvas.width  = Math.max(1, Math.round(img.width  * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';                 // matte so transparent PNGs don't go black
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = reject;
       img.src = reader.result;
@@ -515,6 +637,30 @@ async function fileToDataUrl(file, maxDim = 1600) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+// One chart thumbnail; resolves its image from IndexedDB via the imageId.
+function ChartThumb({ chart, onCaptionChange, onRemove }) {
+  const url = useImage(chart.imageId);
+  return (
+    <div className="relative group">
+      {url
+        ? <img src={url} alt="" className="w-full h-24 object-cover rounded border border-bg-border" />
+        : <div className="w-full h-24 rounded border border-bg-border bg-bg-hover" />}
+      <input
+        value={chart.caption}
+        onChange={e => onCaptionChange(e.target.value)}
+        placeholder="Caption…"
+        className="w-full mt-1 bg-bg border border-bg-border rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:border-accent-green/50"
+      />
+      <button
+        onClick={onRemove}
+        className="absolute top-1 right-1 bg-bg/80 text-accent-red opacity-0 group-hover:opacity-100 rounded p-0.5"
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
 }
 
 function ChartUploader({ charts, onChange }) {
@@ -537,7 +683,9 @@ function ChartUploader({ charts, onChange }) {
     for (const f of imgs) {
       try {
         const dataUrl = await fileToDataUrl(f);
-        next.push({ id: uid(), dataUrl, caption: '' });
+        const imageId = newImageId();
+        await putImage(imageId, dataUrl);
+        next.push({ id: uid(), imageId, caption: '' });
       } catch (e) { /* skip */ }
     }
     onChange(next);
@@ -641,25 +789,16 @@ function ChartUploader({ charts, onChange }) {
       {charts.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3">
           {charts.map((c, i) => (
-            <div key={c.id} className="relative group">
-              <img src={c.dataUrl} alt="" className="w-full h-24 object-cover rounded border border-bg-border" />
-              <input
-                value={c.caption}
-                onChange={e => {
-                  const next = [...charts];
-                  next[i] = { ...c, caption: e.target.value };
-                  onChange(next);
-                }}
-                placeholder="Caption…"
-                className="w-full mt-1 bg-bg border border-bg-border rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:border-accent-green/50"
-              />
-              <button
-                onClick={() => onChange(charts.filter(x => x.id !== c.id))}
-                className="absolute top-1 right-1 bg-bg/80 text-accent-red opacity-0 group-hover:opacity-100 rounded p-0.5"
-              >
-                <X size={12} />
-              </button>
-            </div>
+            <ChartThumb
+              key={c.id}
+              chart={c}
+              onCaptionChange={(v) => {
+                const next = [...charts];
+                next[i] = { ...c, caption: v };
+                onChange(next);
+              }}
+              onRemove={() => onChange(charts.filter(x => x.id !== c.id))}
+            />
           ))}
         </div>
       )}
@@ -667,7 +806,7 @@ function ChartUploader({ charts, onChange }) {
   );
 }
 
-function PlaybookForm({ initial, onCancel, onSave }) {
+function PlaybookForm({ initial, onCancel, onSave, eventKeyOptions = EVENT_KEYS }) {
   const playbookEventMeta = useStore(s => s.playbookEventMeta);
   const setEventMeta      = useStore(s => s.setEventMeta);
 
@@ -790,7 +929,7 @@ function PlaybookForm({ initial, onCancel, onSave }) {
             )}
           </div>
           <datalist id="event-key-options">
-            {EVENT_KEYS.map(k => <option key={k} value={k} />)}
+            {eventKeyOptions.map(k => <option key={k} value={k} />)}
           </datalist>
           <p className="text-[11px] text-text-muted mt-1">
             Match the exact financialjuice.com headline. Rating (A+, A-, B+…) is shared across all releases for this event.
@@ -885,6 +1024,17 @@ export default function PlaybookPage() {
   const addPlaybook        = useStore(s => s.addPlaybook);
   const updatePlaybook     = useStore(s => s.updatePlaybook);
   const deletePlaybook     = useStore(s => s.deletePlaybook);
+  const createEventKey     = useStore(s => s.createEventKey);
+  const renameEventKey     = useStore(s => s.renameEventKey);
+  const deleteEventKey     = useStore(s => s.deleteEventKey);
+
+  // Combined key list for all datalists: canonical + in-use + created/meta keys.
+  const allEventKeys = useMemo(() => {
+    const set = new Set(EVENT_KEYS);
+    for (const p of playbooks) if (p.event_key) set.add(p.event_key);
+    for (const k of Object.keys(playbookEventMeta)) set.add(k);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [playbooks, playbookEventMeta]);
 
   // Per-playbook performance from trades linked via playbook_id.
   const stats = useMemo(() => {
@@ -911,6 +1061,7 @@ export default function PlaybookPage() {
   const [editing, setEditing]     = useState(null);
   const [filter, setFilter]       = useState('');
   const [showImporter, setShowImporter] = useState(false);
+  const [creatingKey, setCreatingKey] = useState(false);
 
   const sorted = useMemo(
     () => [...playbooks].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
@@ -939,8 +1090,13 @@ export default function PlaybookPage() {
         ung.push(p);
       }
     }
+    // Surface created/empty event keys (no releases yet) as 0-release groups.
+    for (const k of Object.keys(playbookEventMeta)) {
+      if (keyed[k]) continue;
+      if (!q || k.toLowerCase().includes(q)) keyed[k] = [];
+    }
     return { groups: keyed, ungrouped: ung };
-  }, [sorted, filter]);
+  }, [sorted, filter, playbookEventMeta]);
 
   const active = playbooks.find(p => p.id === activeId);
   const activeReleases = activeEventKey
@@ -999,6 +1155,27 @@ export default function PlaybookPage() {
     setView(activeEventKey ? 'event' : 'list');
   }
 
+  // Confirm + delete an event key AND its release records. Returns whether it ran.
+  function confirmDeleteEventKey(key) {
+    const n = playbooks.filter(p => p.event_key === key).length;
+    const msg = n > 0
+      ? `Delete event key "${key}" and its ${n} release${n === 1 ? '' : 's'}? `
+        + `This permanently removes the release record${n === 1 ? '' : 's'}. `
+        + `Linked trades keep their P&L but lose the playbook link.`
+      : `Delete event key "${key}"?`;
+    if (!confirm(msg)) return false;
+    deleteEventKey(key);
+    return true;
+  }
+
+  function handleCreateKey(name) {
+    const k = (name || '').trim();
+    setCreatingKey(false);
+    if (!k) return;
+    createEventKey(k);          // no-op if it already exists
+    openEventDetail(k);
+  }
+
   function seedSample() { addPlaybook(SAMPLE_PLAYBOOK); }
 
   // ── Form view ────────────────────────────────────────────────────────────
@@ -1012,6 +1189,7 @@ export default function PlaybookPage() {
         <PlaybookForm
           key={editing?.id ?? 'new'}
           initial={editing}
+          eventKeyOptions={allEventKeys}
           onCancel={cancelReturn}
           onSave={handleSave}
         />
@@ -1027,9 +1205,11 @@ export default function PlaybookPage() {
           playbook={active}
           stats={stats[active.id] || EMPTY_STATS}
           backLabel={activeEventKey ? activeEventKey : 'All playbooks'}
+          eventKeyOptions={allEventKeys}
           onBack={() => activeEventKey ? setView('event') : setView('list')}
           onEdit={openEdit}
           onDelete={handleDelete}
+          onAssignEventKey={(val) => updatePlaybook(active.id, { event_key: val })}
         />
       </div>
     );
@@ -1040,21 +1220,25 @@ export default function PlaybookPage() {
     return (
       <div className="p-6">
         <EventDetail
+          key={activeEventKey}
           eventKey={activeEventKey}
           releases={activeReleases}
           eventMeta={playbookEventMeta[activeEventKey]}
+          eventKeyOptions={allEventKeys}
           onBack={() => setView('list')}
           onAddRelease={() => openNewRelease(activeEventKey)}
           onOpenRelease={id => openDetail(id, activeEventKey)}
           onRatingChange={r => setEventMeta(activeEventKey, { rating: r })}
           onNextNotesChange={notes => setEventMeta(activeEventKey, { nextReleaseNotes: notes })}
+          onRename={(newKey) => { renameEventKey(activeEventKey, newKey); setActiveEventKey(newKey); }}
+          onDelete={() => { if (confirmDeleteEventKey(activeEventKey)) { setActiveEventKey(null); setView('list'); } }}
         />
       </div>
     );
   }
 
   // ── List view ────────────────────────────────────────────────────────────
-  const hasAny = playbooks.length > 0;
+  const hasAny = playbooks.length > 0 || Object.keys(playbookEventMeta).length > 0;
   const groupEntries = Object.entries(groups);
   const totalVisible = groupEntries.length + ungrouped.length;
 
@@ -1075,6 +1259,12 @@ export default function PlaybookPage() {
             <Upload size={14} /> Import from OneNote
           </button>
           <button
+            onClick={() => setCreatingKey(true)}
+            className="flex items-center gap-1 px-3 py-2 text-sm border border-bg-border text-text-secondary hover:text-text-primary rounded"
+          >
+            <Plus size={14} /> New event key
+          </button>
+          <button
             onClick={openNew}
             className="flex items-center gap-1 px-3 py-2 text-sm bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
           >
@@ -1082,6 +1272,18 @@ export default function PlaybookPage() {
           </button>
         </div>
       </div>
+
+      {creatingKey && (
+        <div className="card p-3 flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-text-secondary">New event key:</span>
+          <InlineKeyInput
+            placeholder="e.g. US CPI YoY — match the financialjuice headline"
+            options={allEventKeys}
+            onCommit={handleCreateKey}
+            onCancel={() => setCreatingKey(false)}
+          />
+        </div>
+      )}
 
       {showImporter && <OneNotePlaybookImporter onClose={() => setShowImporter(false)} />}
 
@@ -1131,6 +1333,7 @@ export default function PlaybookPage() {
                     rating={playbookEventMeta[key]?.rating}
                     releases={releases}
                     onClick={() => openEventDetail(key)}
+                    onDelete={() => confirmDeleteEventKey(key)}
                   />
                 ))}
               </div>

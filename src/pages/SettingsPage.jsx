@@ -261,8 +261,9 @@ export default function SettingsPage() {
   const fileRef = useRef(null);
   const [importMsg, setImportMsg] = useState('');
 
-  function downloadJson() {
-    const blob = new Blob([exportData()], { type: 'application/json' });
+  async function downloadJson() {
+    const json = await exportData();
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -273,9 +274,9 @@ export default function SettingsPage() {
 
   function handleImportFile(file) {
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
       try {
-        importData(e.target.result);
+        await importData(e.target.result);
         setImportMsg('Imported.');
         setTimeout(() => setImportMsg(''), 2000);
       } catch (err) {

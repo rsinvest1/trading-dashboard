@@ -20,8 +20,8 @@ export default function AutoBackupPrompt() {
     prev.current = count;
   }, [count]);
 
-  function download() {
-    const blob = new Blob([exportData()], { type: 'application/json' });
+  async function download() {
+    const blob = new Blob([await exportData()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

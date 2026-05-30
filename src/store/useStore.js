@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { applyEvents } from '../utils/positionAggregator';
 import { tickerFromSymbol } from '../utils/instruments';
+import { extractImages, inlineImages, putImages, clearAllImages } from '../utils/imageStore';
 
 const DEFAULT_BEHAVIOR_TAGS = [
   'Revenge trade', 'FOMO entry', 'Stuck to plan', 'Early exit',
@@ -96,7 +97,7 @@ function tradeDefaults() {
     strategy_id: null,
     rules_followed: [],
     playbook_id: null,
-    screenshot: null,
+    screenshot_id: null,      // → IndexedDB image (see utils/imageStore)
     execution_rating: null,
     notes: null,
     // ── Behavior Engine fields (v2) ───────────────────────────────────
@@ -261,6 +262,27 @@ function migrateV3toV4(state) {
   };
 }
 
+// ── Migration v4 → v5: add `playbookEventMeta` map for event-level metadata
+//    (rating, etc.) keyed by event_key. ─────────────────────────────────────
+function migrateV4toV5(state) {
+  return { ...state, playbookEventMeta: state?.playbookEventMeta ?? {} };
+}
+
+// ── Migration v5 → v6: move inline image data URLs (chart.dataUrl,
+//    trade.screenshot) out of localStorage and into IndexedDB, leaving only
+//    lightweight references behind. The IDB writes are async, so we stash the
+//    extracted images here and flush them in `onRehydrateStorage`. ──────────
+let __pendingImageWrites = [];
+function migrateV5toV6(state) {
+  try {
+    const { data, images } = extractImages(state || {});
+    if (images.length) __pendingImageWrites.push(...images);
+    return data;
+  } catch {
+    return state;
+  }
+}
+
 export const useStore = create(
   persist(
     (set, get) => ({
@@ -270,6 +292,7 @@ export const useStore = create(
       patterns: [],          // legacy slot, kept for back-compat (unused)
       strategies: [],        // ← reusable trading models with rule checklists
       playbooks: [],
+      playbookEventMeta: {}, // event-level metadata keyed by event_key: { rating }
       tendencies: [],
       accounts: DEFAULT_ACCOUNTS,
       settings: {
@@ -603,6 +626,43 @@ export const useStore = create(
         playbooks: s.playbooks.map(p => p.id === id ? { ...p, ...patch } : p)
       })),
       deletePlaybook: (id) => set((s) => ({ playbooks: s.playbooks.filter(p => p.id !== id) })),
+      setEventMeta: (key, patch) => set((s) => ({
+        playbookEventMeta: {
+          ...s.playbookEventMeta,
+          [key]: { ...(s.playbookEventMeta[key] ?? {}), ...patch }
+        }
+      })),
+
+      // Create an empty, first-class event key (shows as a 0-release group via meta).
+      createEventKey: (key) => set((s) => {
+        const k = (key || '').trim();
+        if (!k) return {};
+        const exists = s.playbookEventMeta[k] || s.playbooks.some(p => p.event_key === k);
+        if (exists) return {};                      // no-op; UI navigates to the existing one
+        return { playbookEventMeta: { ...s.playbookEventMeta, [k]: {} } };
+      }),
+      // Rename a key across all releases + metadata. If `newKey` already exists this
+      // MERGES (releases re-point to it; target meta wins on field collisions).
+      renameEventKey: (oldKey, newKey) => set((s) => {
+        const from = (oldKey || '').trim(), to = (newKey || '').trim();
+        if (!from || !to || from === to) return {};
+        const meta = { ...s.playbookEventMeta };
+        meta[to] = { ...(meta[from] ?? {}), ...(meta[to] ?? {}) };
+        delete meta[from];
+        return {
+          playbooks: s.playbooks.map(p => p.event_key === from ? { ...p, event_key: to } : p),
+          playbookEventMeta: meta,
+        };
+      }),
+      // Delete a key AND its release records (per user decision). Removes meta too.
+      deleteEventKey: (key) => set((s) => {
+        const k = (key || '').trim();
+        const meta = { ...s.playbookEventMeta }; delete meta[k];
+        return {
+          playbooks: s.playbooks.filter(p => p.event_key !== k),
+          playbookEventMeta: meta,
+        };
+      }),
 
       addTendency: (t) => set((s) => ({
         tendencies: [...s.tendencies, {
@@ -635,21 +695,29 @@ export const useStore = create(
 
       updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
 
-      exportData: () => {
+      // Async: re-inlines images from IndexedDB so the backup is one portable
+      // JSON in the legacy format (charts[].dataUrl, trade.screenshot).
+      exportData: async () => {
         const s = get();
+        const withImages = await inlineImages({
+          trades: s.trades, playbooks: s.playbooks
+        });
         return JSON.stringify({
-          trades: s.trades, sessions: s.sessions, bestOpps: s.bestOpps,
+          trades: withImages.trades, sessions: s.sessions, bestOpps: s.bestOpps,
           patterns: s.patterns, strategies: s.strategies,
-          playbooks: s.playbooks, tendencies: s.tendencies,
+          playbooks: withImages.playbooks, playbookEventMeta: s.playbookEventMeta,
+          tendencies: s.tendencies,
           accounts: s.accounts, settings: s.settings,
           exported_at: new Date().toISOString(),
           schema_version: 1
         }, null, 2);
       },
-      importData: (json) => {
+      // Async: pulls inline images out into IndexedDB so the localStorage write
+      // stays tiny (no quota overflow), then replaces all state.
+      importData: async (json) => {
         const d = typeof json === 'string' ? JSON.parse(json) : json;
         const isV0 = !d.schema_version || d.schema_version < 1;
-        const next = isV0
+        const migrated = isV0
           ? migrateV0toV1({
               trades:    d.trades    ?? [],
               sessions:  d.sessions  ?? [],
@@ -662,6 +730,10 @@ export const useStore = create(
               settings:  d.settings  ?? {}
             })
           : d;
+        // Separate images from the lightweight data, then swap IDB contents.
+        const { data: next, images } = extractImages(migrated);
+        await clearAllImages();
+        await putImages(images);
         set({
           trades:    next.trades     ?? [],
           sessions:  next.sessions   ?? [],
@@ -669,6 +741,7 @@ export const useStore = create(
           patterns:  next.patterns   ?? [],
           strategies: next.strategies ?? [],
           playbooks: next.playbooks  ?? [],
+          playbookEventMeta: next.playbookEventMeta ?? {},
           tendencies: next.tendencies ?? [],
           accounts:  next.accounts   ?? DEFAULT_ACCOUNTS,
           settings: {
@@ -682,14 +755,25 @@ export const useStore = create(
     }),
     {
       name: 'trading-dashboard-v2',
-      version: 4,
+      version: 6,
       migrate: (persisted, fromVersion) => {
         let next = persisted || {};
         if (fromVersion < 1) next = migrateV0toV1(next);
         if (fromVersion < 2) next = migrateV1toV2(next);
         if (fromVersion < 3) next = migrateV2toV3(next);
         if (fromVersion < 4) next = migrateV3toV4(next);
+        if (fromVersion < 5) next = migrateV4toV5(next);
+        if (fromVersion < 6) next = migrateV5toV6(next);
         return next;
+      },
+      // Flush images extracted during the v5→v6 migration into IndexedDB once
+      // rehydration finishes (migrate() must stay synchronous).
+      onRehydrateStorage: () => () => {
+        if (__pendingImageWrites.length) {
+          const batch = __pendingImageWrites;
+          __pendingImageWrites = [];
+          putImages(batch).catch(() => {});
+        }
       }
     }
   )

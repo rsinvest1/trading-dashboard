@@ -3,6 +3,7 @@ import { Upload, X, Check, AlertCircle, BookOpen, Image as ImageIcon } from 'luc
 import { useStore } from '../store/useStore';
 import { parseOneNoteMhtml } from '../utils/oneNoteParser';
 import { downscaleDataUrl } from '../utils/image';
+import { putImage, newImageId } from '../utils/imageStore';
 import { EVENT_KEYS } from '../utils/events';
 
 function readFileText(file) {
@@ -99,8 +100,10 @@ export default function OneNotePlaybookImporter({ onClose }) {
       let charts = [];
       if (includeImages && d.charts.length) {
         for (const c of d.charts) {
-          const dataUrl = await downscaleDataUrl(c.dataUrl);
-          charts.push({ id: c.id, dataUrl, caption: c.caption || '' });
+          const dataUrl = await downscaleDataUrl(c.dataUrl, 1280, 0.7);
+          const imageId = newImageId();
+          await putImage(imageId, dataUrl);
+          charts.push({ id: c.id, imageId, caption: c.caption || '' });
         }
       }
       out.push({
@@ -196,9 +199,9 @@ export default function OneNotePlaybookImporter({ onClose }) {
                 <div className="text-xs text-accent-yellow flex items-start gap-2 px-1">
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />
                   <div>
-                    This import is large. Charts are downscaled on import, but the browser's
-                    localStorage is ~5&nbsp;MB total. If you hit a quota error, turn off
-                    <strong> Include chart images</strong> below and keep the text only.
+                    This import is large. Charts are downscaled and stored in IndexedDB
+                    (separate from the ~5&nbsp;MB localStorage budget), so this should be fine —
+                    uncheck <strong>Include chart images</strong> only if you want text-only.
                   </div>
                 </div>
               )}
