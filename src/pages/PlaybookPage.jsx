@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, ArrowLeft, Edit2, Trash2, X, ImagePlus, Calendar as CalIcon, Tag,
-  Newspaper, BookOpen, ClipboardPaste, Upload
+  Newspaper, BookOpen, ClipboardPaste, Upload, FileText, Send
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { TICKERS } from '../utils/instruments';
 import { fmtMoney, fmtPct, fmtR, realizedR } from '../utils/calculations';
-import { EVENT_KEYS } from '../utils/events';
+import { EVENT_KEYS, normalizeEventKey } from '../utils/events';
 import { useImage, putImage, newImageId } from '../utils/imageStore';
 import OneNotePlaybookImporter from '../components/OneNotePlaybookImporter';
+import AutoJournalImporter from '../components/AutoJournalImporter';
+import { groupJournalsByEventKey, summarizeJournals, gradeTone } from '../utils/releaseJournalSchema';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -108,6 +110,7 @@ function ChipList({ items, onRemove, color = 'blue' }) {
 }
 
 const RATING_OPTIONS = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'];
+const MACRO_BRIDGE_URL = import.meta.env.VITE_MACRO_BRIDGE_URL || 'http://127.0.0.1:8787';
 
 function RatingBadge({ rating, className = '' }) {
   if (!rating) return null;
@@ -121,6 +124,60 @@ function RatingBadge({ rating, className = '' }) {
       {rating}
     </span>
   );
+}
+
+function summarizeText(text, max = 420) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+function buildMacroPrepExport({ playbooks, playbookEventMeta, releaseJournals, journalsByKey }) {
+  const keys = new Set([
+    ...playbooks.map(p => p.event_key).filter(Boolean),
+    ...Object.keys(playbookEventMeta || {}),
+  ]);
+
+  const events = [...keys].sort((a, b) => a.localeCompare(b)).map((eventKey) => {
+    const releases = playbooks
+      .filter(p => p.event_key === eventKey)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const meta = playbookEventMeta?.[eventKey] || {};
+    const auto = summarizeJournals(journalsByKey[normalizeEventKey(eventKey)]);
+    const newest = releases[0];
+    const instruments = [...new Set(releases.flatMap(r => r.instruments || []))];
+    const notes = [
+      meta.nextReleaseNotes ? `Next release: ${summarizeText(meta.nextReleaseNotes)}` : '',
+      newest?.context ? `Latest context: ${summarizeText(newest.context)}` : '',
+      newest?.outcome ? `Latest outcome: ${summarizeText(newest.outcome)}` : '',
+      auto?.bestAsset ? `Auto review best: ${auto.bestAsset}${auto.latestGrade ? ` (${auto.latestGrade})` : ''}` : '',
+    ].filter(Boolean);
+
+    return {
+      eventKey,
+      rating: meta.rating || '',
+      releaseCount: releases.length,
+      instruments,
+      latestDate: newest?.date || '',
+      notes,
+      autoStats: auto ? {
+        best: auto.bestAsset || '',
+        p2R: auto.avgPeak2RR ?? null,
+        p1R: auto.avgPeak1RR ?? null,
+        headlineHits: auto.headlineInterferenceCount ?? null,
+      } : undefined,
+    };
+  });
+
+  return {
+    exportedAt: new Date().toISOString(),
+    source: 'trading-dashboard',
+    counts: {
+      playbooks: playbooks.length,
+      releaseJournals: releaseJournals.length,
+      events: events.length,
+    },
+    events,
+  };
 }
 
 // Shared inline editor for event-key text (create / rename / assign). Commits on
@@ -216,7 +273,61 @@ function PlaybookCard({ playbook, stats, onClick }) {
   );
 }
 
-function EventCard({ eventKey, rating, releases, onClick, onDelete }) {
+// Compact auto-journal rollup shown on an EventCard when imported Release
+// Journal packages match this event key. Display-only; full review opens from
+// the "Import Auto Journal" modal.
+function AutoJournalStats({ auto }) {
+  const fmtRR = (n) => (Number.isFinite(n) ? n.toFixed(1) : '—');
+  return (
+    <div className="mt-3 pt-2 border-t border-bg-border/70">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] uppercase tracking-wider text-accent-blue">
+          Auto reviews: {auto.count}
+        </span>
+        {auto.latestGrade && (
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+            gradeTone(auto.latestGrade) === 'green' ? 'text-accent-green border-accent-green/30 bg-accent-green/10'
+            : gradeTone(auto.latestGrade) === 'yellow' ? 'text-accent-yellow border-accent-yellow/30 bg-accent-yellow/10'
+            : 'text-accent-red border-accent-red/30 bg-accent-red/10'
+          }`}>
+            {auto.latestGrade}
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] font-mono text-text-muted">
+        {auto.bestAsset && (
+          <div className="col-span-2 truncate">
+            <span className="text-text-muted">Best: </span>
+            <span className="text-text-secondary">{auto.bestAsset}</span>
+          </div>
+        )}
+        <div>MAE: <span className="text-text-secondary">{auto.avgMaeLabel || '—'}</span></div>
+        <div>P1 R/R: <span className="text-text-secondary">{fmtRR(auto.avgPeak1RR)}</span></div>
+        <div>P2 R/R: <span className="text-text-secondary">{fmtRR(auto.avgPeak2RR)}</span></div>
+        <div>
+          Headline hits:{' '}
+          <span className={auto.headlineInterferenceCount > 0 ? 'text-accent-yellow' : 'text-text-secondary'}>
+            {auto.headlineInterferenceCount}
+          </span>
+        </div>
+        {auto.expectedBiasHitRate != null && (
+          <div className="col-span-2">
+            Scorecard bias hit:{' '}
+            <span className={
+              auto.expectedBiasHitRate >= 0.6 ? 'text-accent-green'
+              : auto.expectedBiasHitRate >= 0.4 ? 'text-accent-yellow' : 'text-accent-red'
+            }>
+              {Math.round(auto.expectedBiasHitRate * 100)}%
+            </span>
+            <span className="text-text-muted"> ({auto.reviewCount} review{auto.reviewCount === 1 ? '' : 's'})</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EventCard({ eventKey, rating, releases, auto, onClick, onDelete }) {
   const newest = releases[0];
   const instruments = [...new Set(releases.flatMap(r => r.instruments || []))];
   return (
@@ -240,6 +351,7 @@ function EventCard({ eventKey, rating, releases, onClick, onDelete }) {
             <span className="ml-auto font-mono">{fmtDateShort(newest.date)}</span>
           )}
         </div>
+        {auto && <AutoJournalStats auto={auto} />}
       </button>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -1020,6 +1132,7 @@ export default function PlaybookPage() {
   const playbooks          = useStore(s => s.playbooks);
   const trades             = useStore(s => s.trades);
   const playbookEventMeta  = useStore(s => s.playbookEventMeta);
+  const releaseJournals    = useStore(s => s.releaseJournals);
   const setEventMeta       = useStore(s => s.setEventMeta);
   const addPlaybook        = useStore(s => s.addPlaybook);
   const updatePlaybook     = useStore(s => s.updatePlaybook);
@@ -1035,6 +1148,13 @@ export default function PlaybookPage() {
     for (const k of Object.keys(playbookEventMeta)) set.add(k);
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [playbooks, playbookEventMeta]);
+
+  // Imported auto-journal packages grouped by normalized event key, so each
+  // EventCard can show its rollup (auto reviews, best asset, avg MAE / R-R …).
+  const journalsByKey = useMemo(
+    () => groupJournalsByEventKey(releaseJournals),
+    [releaseJournals]
+  );
 
   // Per-playbook performance from trades linked via playbook_id.
   const stats = useMemo(() => {
@@ -1061,7 +1181,9 @@ export default function PlaybookPage() {
   const [editing, setEditing]     = useState(null);
   const [filter, setFilter]       = useState('');
   const [showImporter, setShowImporter] = useState(false);
+  const [showAutoJournal, setShowAutoJournal] = useState(false);
   const [creatingKey, setCreatingKey] = useState(false);
+  const [macroExportStatus, setMacroExportStatus] = useState('');
 
   const sorted = useMemo(
     () => [...playbooks].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
@@ -1178,6 +1300,23 @@ export default function PlaybookPage() {
 
   function seedSample() { addPlaybook(SAMPLE_PLAYBOOK); }
 
+  async function exportMacroPrep() {
+    setMacroExportStatus('Exporting…');
+    const payload = buildMacroPrepExport({ playbooks, playbookEventMeta, releaseJournals, journalsByKey });
+    try {
+      const res = await fetch(`${MACRO_BRIDGE_URL}/playbook-export`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setMacroExportStatus(`Exported ${payload.events.length} events`);
+      window.setTimeout(() => setMacroExportStatus(''), 3500);
+    } catch (err) {
+      setMacroExportStatus(`Export failed: ${err?.message || 'bridge offline'}`);
+    }
+  }
+
   // ── Form view ────────────────────────────────────────────────────────────
   if (view === 'form') {
     function cancelReturn() {
@@ -1253,10 +1392,22 @@ export default function PlaybookPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={exportMacroPrep}
+            className="flex items-center gap-1 px-3 py-2 text-sm border border-accent-green/35 text-accent-green hover:bg-accent-green/10 rounded"
+          >
+            <Send size={14} /> Export Macro Prep
+          </button>
+          <button
             onClick={() => setShowImporter(true)}
             className="flex items-center gap-1 px-3 py-2 text-sm border border-bg-border text-text-secondary hover:text-text-primary rounded"
           >
             <Upload size={14} /> Import from OneNote
+          </button>
+          <button
+            onClick={() => setShowAutoJournal(true)}
+            className="flex items-center gap-1 px-3 py-2 text-sm border border-bg-border text-text-secondary hover:text-text-primary rounded"
+          >
+            <FileText size={14} /> Import Auto Journal
           </button>
           <button
             onClick={() => setCreatingKey(true)}
@@ -1273,6 +1424,12 @@ export default function PlaybookPage() {
         </div>
       </div>
 
+      {macroExportStatus && (
+        <div className="card px-3 py-2 text-sm text-text-secondary">
+          {macroExportStatus}
+        </div>
+      )}
+
       {creatingKey && (
         <div className="card p-3 flex items-center gap-2 flex-wrap">
           <span className="text-sm text-text-secondary">New event key:</span>
@@ -1286,6 +1443,8 @@ export default function PlaybookPage() {
       )}
 
       {showImporter && <OneNotePlaybookImporter onClose={() => setShowImporter(false)} />}
+
+      {showAutoJournal && <AutoJournalImporter onClose={() => setShowAutoJournal(false)} />}
 
       {hasAny && (
         <input
@@ -1332,6 +1491,7 @@ export default function PlaybookPage() {
                     eventKey={key}
                     rating={playbookEventMeta[key]?.rating}
                     releases={releases}
+                    auto={summarizeJournals(journalsByKey[normalizeEventKey(key)])}
                     onClick={() => openEventDetail(key)}
                     onDelete={() => confirmDeleteEventKey(key)}
                   />

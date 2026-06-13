@@ -1,4 +1,4 @@
-import { tickerFromSymbol } from './instruments';
+import { tickerFromSymbol, pointValue, commissionPerSide } from './instruments';
 
 export function tradeFingerprint(t) {
   return [
@@ -54,7 +54,20 @@ function makeTrade(fills, account, symbol, side) {
     : null;
   const entry = entryPrice != null ? Number(entryPrice.toFixed(4)) : null;
   const exit  = exitPrice  != null ? Number(exitPrice.toFixed(4))  : null;
-  const pnl   = Number(totalNet.toFixed(2));
+  let pnl     = Number(totalNet.toFixed(2));
+  let feesOut = totalFee;
+  // Tradovate Orders export carries no P&L column — derive P&L from the price
+  // difference × closed size × contract point value, then subtract commissions
+  // (charged per side, per contract: total contracts filled across all fills).
+  if (entry != null && exit != null && fills.some(f => f.computePnl)) {
+    const tk = tickerFromSymbol(symbol);
+    const dir = side === 'long' ? 1 : -1;
+    const gross = (exit - entry) * closeContracts * dir * pointValue(tk);
+    const contractsFilled = fills.reduce((s, f) => s + Math.abs(f.quantity), 0);
+    const commission = commissionPerSide(tk) * contractsFilled;
+    feesOut = commission;
+    pnl = Number((gross - commission).toFixed(2));
+  }
 
   // Stable fingerprint for dedupe across re-imports.
   // Account-independent so we can recompute it for legacy trades that pre-date this field.
@@ -78,7 +91,7 @@ function makeTrade(fills, account, symbol, side) {
     duration_sec,
     stop_loss_dollars: null,
     pnl,
-    fees:    Number(totalFee.toFixed(2)),
+    fees:    Number(feesOut.toFixed(2)),
     rr_actual: null,
     setup_id: null,
     execution_rating: null,
@@ -150,15 +163,17 @@ export function aggregateFills(fills) {
 
 /**
  * Auto-map raw account strings from CSV to seeded account ids.
- * FRTL... → Tradeify; S2F-DT-... → Daytraders.
+ * FRTL... → Tradeify; S2F-DT-... → Daytraders; Tradovate/ETF... → Elite Trader Funding.
  */
 export function defaultAccountMap(rawAccounts, accounts) {
   const map = {};
   const tradeify   = accounts.find(a => /tradeify/i.test(a.firm_name));
   const daytraders = accounts.find(a => /daytraders/i.test(a.firm_name));
+  const etf        = accounts.find(a => /elite trader/i.test(a.firm_name));
   for (const raw of rawAccounts) {
     if (/^FRTL/i.test(raw) && tradeify)   map[raw] = tradeify.id;
     else if (/^S2F-DT/i.test(raw) && daytraders) map[raw] = daytraders.id;
+    else if ((/^tradovate$/i.test(raw) || /elite/i.test(raw) || /etf/i.test(raw)) && etf) map[raw] = etf.id;
     else map[raw] = accounts[0]?.id ?? null;
   }
   return map;

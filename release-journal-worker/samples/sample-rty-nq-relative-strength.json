@@ -1,0 +1,175 @@
+{
+  "releaseId": "rty_nq_relative_strength_2026-05-29T1345Z",
+  "releaseKey": "RTY vs NQ relative strength",
+  "releaseName": "US Chicago PMI / Fed headline growth scare",
+  "region": "US",
+  "scheduledTime": "2026-05-29T13:45:00.000Z",
+  "actualReleaseTime": "2026-05-29T13:45:02.000Z",
+  "releaseTemplate": "mixed_macro",
+  "importance": "A_PLUS",
+  "holdingWindow": {
+    "startTime": "2026-05-29T13:44:30.000Z",
+    "endTime": "2026-05-29T14:05:00.000Z",
+    "durationSec": 1230
+  },
+  "numbers": {
+    "lines": [
+      { "name": "Chicago PMI", "actual": 40.6, "forecast": 45.0, "previous": 44.6, "surprise": -4.4, "weight": 1.0 },
+      { "name": "Chicago PMI — New Orders", "actual": 38.1, "forecast": "", "previous": 42.9, "surprise": -4.8, "weight": 0.5 },
+      { "name": "Chicago PMI — Employment", "actual": 42.0, "forecast": "", "previous": 45.3, "surprise": -3.3, "weight": 0.4 }
+    ],
+    "aggregateSurpriseScore": -2.7,
+    "interpretation": "Sharp miss across the board. Headline 4+ points below consensus and a 4-year low; new orders and employment both contracting. Reads as a clean growth scare — small caps and cyclicals most exposed, mega-cap tech relatively defensive, bonds bid."
+  },
+  "trackedAssets": [
+    {
+      "symbol": "RTY",
+      "role": "PRIMARY",
+      "source": "QUANTOWER",
+      "direction": "SHORT",
+      "entryModels": {
+        "immediate": { "timestamp": "2026-05-29T13:45:06.000Z", "price": 2104.8 },
+        "confirmed": { "timestamp": "2026-05-29T13:45:41.000Z", "price": 2101.2 }
+      },
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T13:46:20.000Z", "price": 2092.3, "ticksFromEntry": 125, "secondsFromRelease": 78, "notes": "First impulse low — fast, vertical." },
+        "retrace1": { "timestamp": "2026-05-29T13:49:10.000Z", "price": 2097.6, "ticksFromEntry": 72, "secondsFromRelease": 248, "notes": "Bounce into prior support-turned-resistance. Behaved like a liquidity grab, not a reversal." },
+        "peak2": { "timestamp": "2026-05-29T13:58:40.000Z", "price": 2086.1, "ticksFromEntry": 187, "secondsFromRelease": 818, "notes": "Continuation low after the bounce failed — trend leg." }
+      },
+      "excursions": {
+        "maeToPeak1Ticks": 14,
+        "maeBetweenPeaksTicks": 53,
+        "mfeToPeak1Ticks": 125,
+        "mfeToPeak2Ticks": 187,
+        "totalRangeTicks": 201
+      },
+      "rr": { "peak1Tight": 4.1, "peak1Standard": 2.8, "peak2Standard": 3.9, "peak2Wide": 2.6 },
+      "classification": {
+        "directionalQuality": "EXCELLENT",
+        "maeQuality": "LOW_MAE",
+        "rrQuality": "EXCELLENT",
+        "tradabilityGrade": "A+",
+        "tradabilityScore": 0.91
+      },
+      "screenshots": [
+        { "type": "PRE_RELEASE", "timestamp": "2026-05-29T13:44:30.000Z", "path": "assets/RTY/pre_release.png", "notes": "Coiled below VWAP into the print." },
+        { "type": "RELEASE_IMPULSE", "timestamp": "2026-05-29T13:45:08.000Z", "path": "assets/RTY/release_impulse.png" },
+        { "type": "PEAK_1", "timestamp": "2026-05-29T13:46:20.000Z", "path": "assets/RTY/peak1.png" },
+        { "type": "MAE_BETWEEN_PEAKS", "timestamp": "2026-05-29T13:49:10.000Z", "path": "assets/RTY/mae_between_peaks.png", "notes": "Liquidity-grab bounce." },
+        { "type": "PEAK_2", "timestamp": "2026-05-29T13:58:40.000Z", "path": "assets/RTY/peak2.png" },
+        { "type": "HOLDING_END", "timestamp": "2026-05-29T14:05:00.000Z", "path": "assets/RTY/holding_end.png" }
+      ],
+      "notes": "Cleanest expression of the growth scare. Underperformed NQ on both legs; the bounce was the gift entry for the continuation."
+    },
+    {
+      "symbol": "NQ",
+      "role": "SPREAD_LEG",
+      "source": "QUANTOWER",
+      "direction": "SHORT",
+      "entryModels": {
+        "immediate": { "timestamp": "2026-05-29T13:45:07.000Z", "price": 21840.5 }
+      },
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T13:46:35.000Z", "price": 21788.0, "ticksFromEntry": 210, "secondsFromRelease": 93, "notes": "Sold off but recovered faster than RTY — mega-cap defensiveness." },
+        "peak2": { "timestamp": "2026-05-29T13:58:10.000Z", "price": 21805.0, "ticksFromEntry": 142, "secondsFromRelease": 788 }
+      },
+      "excursions": {
+        "maeToPeak1Ticks": 24,
+        "maeBetweenPeaksTicks": 96,
+        "mfeToPeak1Ticks": 210,
+        "mfeToPeak2Ticks": 210,
+        "totalRangeTicks": 234
+      },
+      "rr": { "peak1Tight": 3.2, "peak1Standard": 2.1, "peak2Standard": 1.4, "peak2Wide": 1.0 },
+      "classification": {
+        "directionalQuality": "GOOD",
+        "maeQuality": "MODERATE_MAE",
+        "rrQuality": "GOOD",
+        "tradabilityGrade": "A",
+        "tradabilityScore": 0.78
+      },
+      "screenshots": [
+        { "type": "RELEASE_IMPULSE", "timestamp": "2026-05-29T13:45:09.000Z", "path": "assets/NQ/release_impulse.png" },
+        { "type": "PEAK_1", "timestamp": "2026-05-29T13:46:35.000Z", "path": "assets/NQ/peak1.png" }
+      ],
+      "notes": "Best as the long-leg hedge / short-leg of the RTY-NQ spread. Standalone short faded on the bounce — the spread (short RTY / long NQ) was the higher-quality expression."
+    },
+    {
+      "symbol": "ZB",
+      "role": "CONFIRMATION",
+      "source": "MANUAL",
+      "direction": "NONE",
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T13:46:05.000Z", "price": 119.28, "secondsFromRelease": 63, "notes": "Bonds bid instantly on the miss — confirmed risk-off." }
+      },
+      "excursions": { "totalRangeTicks": 41 },
+      "classification": { "directionalQuality": "EXCELLENT", "tradabilityGrade": "A" },
+      "screenshots": [
+        { "type": "RELEASE_IMPULSE", "timestamp": "2026-05-29T13:46:05.000Z", "path": "assets/ZB/release_impulse.png" }
+      ],
+      "notes": "OBSERVATION ONLY — bonds are not traded on this account (per risk rules); ZB is tracked purely as a risk-off confirmation tell. Bid throughout = green light to stay short equities."
+    },
+    {
+      "symbol": "GC",
+      "role": "SECONDARY",
+      "source": "QUANTOWER",
+      "direction": "LONG",
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T13:47:50.000Z", "price": 3412.4, "ticksFromEntry": 60, "secondsFromRelease": 168, "notes": "Lagging, choppy bid." }
+      },
+      "excursions": { "maeToPeak1Ticks": 38, "mfeToPeak1Ticks": 60, "totalRangeTicks": 88 },
+      "rr": { "peak1Standard": 1.2, "peak2Standard": 0.9 },
+      "classification": {
+        "directionalQuality": "MIXED",
+        "maeQuality": "HIGH_MAE",
+        "rrQuality": "ACCEPTABLE",
+        "tradabilityGrade": "B",
+        "tradabilityScore": 0.55
+      },
+      "screenshots": [
+        { "type": "RELEASE_IMPULSE", "timestamp": "2026-05-29T13:47:50.000Z", "path": "assets/GC/release_impulse.png" }
+      ],
+      "notes": "Reacted late and chopped. Higher MAE than the equity legs; not the cleanest vehicle for this particular scare."
+    }
+  ],
+  "headlines": [
+    {
+      "timestamp": "2026-05-29T13:45:00.000Z",
+      "text": "US Chicago PMI 40.6 (Forecast 45.0, Previous 44.6) — lowest since 2022",
+      "source": "FINANCIALJUICE",
+      "relevance": "HIGH",
+      "category": "release_related",
+      "possibleNewInformationEvent": true,
+      "likelyMarketEffect": "reinforced_existing_move"
+    },
+    {
+      "timestamp": "2026-05-29T13:52:10.000Z",
+      "text": "Fed's Goolsbee: recent activity data has 'clearly softened', watching closely",
+      "source": "FINANCIALJUICE",
+      "relevance": "HIGH",
+      "category": "fed_central_bank",
+      "possibleNewInformationEvent": true,
+      "likelyMarketEffect": "reinforced_existing_move"
+    },
+    {
+      "timestamp": "2026-05-29T13:58:55.000Z",
+      "text": "Month-end rebalancing flows expected into the equity close — Citi",
+      "source": "FINANCIALJUICE",
+      "relevance": "MEDIUM",
+      "category": "risk_sentiment",
+      "possibleNewInformationEvent": false,
+      "likelyMarketEffect": "no_visible_effect"
+    }
+  ],
+  "summary": {
+    "bestAsset": "RTY (short) / RTY-NQ spread",
+    "secondBestAsset": "NQ (spread hedge)",
+    "worstAsset": "GC",
+    "bestHoldingStyle": "HOLD_TO_PEAK_2",
+    "keyHeadlineInterference": false,
+    "finalTakeaway": "Growth scare spread confirmed. RTY underperformed NQ while bonds remained bid and volatility stayed persistent. The temporary RTY bounce behaved like a liquidity grab before continuation lower — the gift entry, not a reversal.",
+    "learningNote": "When ZB is bid on the print, treat the first RTY bounce as an add, not an exit. The RTY-NQ spread carried cleaner R/R than the outright NQ short. GC is a poor vehicle for an equity-led growth scare — skip it next time."
+  },
+  "createdAt": "2026-05-29T14:10:00.000Z",
+  "updatedAt": "2026-05-29T14:10:00.000Z"
+}

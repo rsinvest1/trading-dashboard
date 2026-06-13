@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Activity, ShieldCheck, AlertTriangle, Lock, RefreshCw, Pause } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Activity, ShieldCheck, AlertTriangle, Lock, RefreshCw, Pause, Play, Square, Radio } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { guardStatus } from '../utils/dayGuard';
+import { fmtMoney } from '../utils/calculations';
 
 function ageSec(iso) {
   if (!iso) return null;
@@ -75,6 +77,9 @@ export default function InSessionControlPanel() {
         </div>
       </div>
 
+      {/* Release control + hard day-guard */}
+      <ReleaseControl />
+
       {/* Live state grid */}
       <div className="grid grid-cols-2 gap-3 text-xs">
         <Stat
@@ -120,6 +125,106 @@ function Stat({ label, value, tone = 'text-text-primary', sub }) {
       <div className="text-[10px] uppercase tracking-wider text-text-muted">{label}</div>
       <div className={`font-mono font-semibold ${tone}`}>{value}</div>
       {sub && <div className="text-[10px] text-text-muted">{sub}</div>}
+    </div>
+  );
+}
+
+// ── Release control + hard day-guard (per-account daily lock + release cap) ─
+function ReleaseControl() {
+  const trades   = useStore(s => s.trades);
+  const dayGuard = useStore(s => s.behaviorState.dayGuard);
+  const cfg      = useStore(s => s.settings.behavior);
+  const accounts = useStore(s => s.accounts);
+  const startRelease  = useStore(s => s.startRelease);
+  const endRelease    = useStore(s => s.endRelease);
+  const cancelRelease = useStore(s => s.cancelRelease);
+  const [label, setLabel] = useState('');
+
+  const st = useMemo(() => guardStatus(trades, dayGuard, cfg), [trades, dayGuard, cfg]);
+  const acctName = (id) => accounts.find(a => a.id === id)?.firm_name || id;
+
+  const acctIds = Object.keys(st.accountPnl);
+  const relPct  = st.active ? Math.min(100, Math.round((Math.max(0, -st.activePnl) / st.perReleaseCap) * 100)) : 0;
+  const relTone = st.releaseCapped ? 'text-accent-red' : st.activePnl < 0 ? 'text-accent-yellow' : 'text-accent-green';
+
+  function start() { startRelease(label); setLabel(''); }
+
+  return (
+    <div className="rounded-lg border border-bg-border bg-bg p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-text-secondary font-semibold">
+          <Radio size={12} /> Release control
+        </span>
+        <span className="text-[11px] font-mono text-text-muted">
+          cap {fmtMoney(-st.dailyLossLock)}/acct · {fmtMoney(-st.perReleaseCap)}/release
+        </span>
+      </div>
+
+      {/* Per-account day P&L vs the hard lock */}
+      <div className="space-y-2">
+        {acctIds.length === 0 && (
+          <div className="text-[11px] text-text-muted">No trades yet this session.</div>
+        )}
+        {acctIds.map(id => {
+          const pnl = st.accountPnl[id];
+          const locked = st.lockedAccounts.includes(id);
+          const pct = Math.min(100, Math.round((Math.max(0, -pnl) / st.dailyLossLock) * 100));
+          const tone = locked ? 'text-accent-red' : pnl < 0 ? 'text-accent-yellow' : 'text-accent-green';
+          return (
+            <div key={id} className="space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-text-muted truncate max-w-[55%]">{acctName(id)}</span>
+                <span className={`font-mono font-semibold ${tone}`}>
+                  {fmtMoney(pnl)} {locked && <span className="ml-1 text-accent-red">· LOCKED</span>}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-bg-hover overflow-hidden">
+                <div className={`h-full ${locked ? 'bg-accent-red' : 'bg-accent-yellow'}`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Optional release tracker (per-release -$ cap) */}
+      {st.active ? (
+        <div className="space-y-1 border-t border-bg-border pt-2">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-text-primary font-medium truncate max-w-[60%]">{st.active.label}</span>
+            <span className={`font-mono font-semibold ${relTone}`}>
+              {fmtMoney(st.activePnl)} / {fmtMoney(-st.perReleaseCap)}
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full bg-bg-hover overflow-hidden">
+            <div className={`h-full ${st.releaseCapped ? 'bg-accent-red' : 'bg-accent-yellow'}`} style={{ width: `${relPct}%` }} />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={endRelease}
+              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs rounded bg-bg-hover hover:bg-bg-border text-text-primary">
+              <Square size={12} /> End release
+            </button>
+            <button onClick={cancelRelease}
+              title="Didn't fire — discard this release"
+              className="px-2 py-1.5 text-xs rounded text-text-muted hover:text-accent-red">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2 border-t border-bg-border pt-2">
+          <input
+            value={label}
+            onChange={e => setLabel(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && start()}
+            placeholder="Track a release (e.g. 08:30 CPI)"
+            className="flex-1 bg-bg-card border border-bg-border rounded px-2 py-1.5 text-xs focus:outline-none focus:border-accent-green/50"
+          />
+          <button onClick={start}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-accent-green text-bg font-semibold hover:bg-accent-green-soft">
+            <Play size={12} /> Start
+          </button>
+        </div>
+      )}
     </div>
   );
 }

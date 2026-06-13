@@ -29,7 +29,8 @@ const DEFAULT_BEHAVIOR_CFG = {
   pause_minutes: 5, kill_consecutive_errors: 2, kill_lock_minutes: 45,
   kill_post_error_count: 3, kill_post_error_window_min: 5, impulsive_window_sec: 120,
   recovery_max_trades_per_hour: 2, recovery_calm_streak_to_exit: 2,
-  recovery_idle_minutes_to_exit: 30
+  recovery_idle_minutes_to_exit: 30,
+  daily_loss_lock: 1200, per_release_loss_cap: 600
 };
 
 function BehaviorSettingsSection() {
@@ -46,6 +47,19 @@ function BehaviorSettingsSection() {
       <p className="text-xs text-text-muted">
         Tune how the system pauses, locks, and recovers from emotional trading.
       </p>
+
+      <div className="card p-4 space-y-2">
+        <h3 className="text-[11px] uppercase tracking-wider text-accent-red">Hard limits</h3>
+        <p className="text-[11px] text-text-muted">
+          Client-side stops — enforced on localhost with no Netlify needed. Daily lock is per account; both reset each session (18:00 ET roll).
+        </p>
+        <div className="grid grid-cols-2 gap-4 pt-1">
+          <NumField label="Daily loss lock ($ / account)"
+            value={cfg.daily_loss_lock} onChange={v => patch({ daily_loss_lock: v })} />
+          <NumField label="Per-release loss cap ($)"
+            value={cfg.per_release_loss_cap} onChange={v => patch({ per_release_loss_cap: v })} />
+        </div>
+      </div>
 
       <div className="card p-4 grid grid-cols-2 md:grid-cols-3 gap-4">
         <NumField label="Pause after error (min)"

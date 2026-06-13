@@ -1,0 +1,20 @@
+{
+  "name": "release-journal-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Separate post-release journaling worker. Reads a local Rithmic tick-log tee, computes peak/MAE/MFE/R-R metrics, and writes journal packages the Trading Dashboard imports. No order routing, no execution.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test src/peakMaeAnalyzer.test.ts src/screenshotScheduler.test.ts src/headlineCapture.test.ts src/tradabilityGrader.test.ts src/backfillRequest.test.ts src/expectedBehavior.test.ts src/legAnalyzer.test.ts src/behaviorComparison.test.ts src/adjustmentEngine.test.ts",
+    "backfill": "node src/backfillCli.ts",
+    "demo": "node src/runDemo.ts",
+    "demo:schedule": "node src/runScheduleDemo.ts",
+    "review": "node src/runReleaseReview.ts",
+    "report": "node src/reportCli.ts",
+    "schedule": "node src/scheduleCli.ts",
+    "build:journal": "node src/cli.ts"
+  }
+}

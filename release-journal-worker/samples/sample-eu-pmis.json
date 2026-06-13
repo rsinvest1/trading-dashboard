@@ -1,0 +1,130 @@
+{
+  "releaseId": "eu_pmis_2026-05-29T0730Z",
+  "releaseKey": "03:15/30 EU PMIs",
+  "releaseName": "Eurozone Flash Manufacturing & Services PMIs (France, Germany, EZ)",
+  "region": "EU",
+  "scheduledTime": "2026-05-29T07:30:00.000Z",
+  "actualReleaseTime": "2026-05-29T07:30:00.000Z",
+  "releaseTemplate": "pmi_release",
+  "importance": "MEDIUM",
+  "holdingWindow": {
+    "startTime": "2026-05-29T07:14:30.000Z",
+    "endTime": "2026-05-29T08:05:00.000Z",
+    "durationSec": 3030
+  },
+  "numbers": {
+    "lines": [
+      { "name": "France Flash Manufacturing PMI", "actual": 50.1, "forecast": 49.4, "previous": 49.2, "surprise": 0.7, "weight": 0.3, "revision": "" },
+      { "name": "France Flash Services PMI", "actual": 48.9, "forecast": 49.8, "previous": 49.6, "surprise": -0.9, "weight": 0.3 },
+      { "name": "Germany Flash Manufacturing PMI", "actual": 47.0, "forecast": 48.5, "previous": 48.4, "surprise": -1.5, "weight": 0.6 },
+      { "name": "Germany Flash Services PMI", "actual": 49.3, "forecast": 50.4, "previous": 50.2, "surprise": -1.1, "weight": 0.6 },
+      { "name": "Eurozone Flash Composite PMI", "actual": 49.1, "forecast": 50.2, "previous": 50.1, "surprise": -1.1, "weight": 1.0 }
+    ],
+    "aggregateSurpriseScore": -0.9,
+    "interpretation": "France firmer but Germany and the Eurozone composite both missed and slipped back below 50. Germany is the swing factor — its manufacturing miss dragged the composite. Net mildly EUR-negative, but the move was small versus the prevailing liquidity regime."
+  },
+  "trackedAssets": [
+    {
+      "symbol": "6E",
+      "role": "PRIMARY",
+      "source": "IG_CFD",
+      "direction": "SHORT",
+      "entryModels": {
+        "immediate": { "timestamp": "2026-05-29T07:30:04.000Z", "price": 1.0842 }
+      },
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T07:32:00.000Z", "price": 1.0828, "ticksFromEntry": 14, "secondsFromRelease": 116, "notes": "Small flush on the German miss." },
+        "retrace1": { "timestamp": "2026-05-29T07:41:00.000Z", "price": 1.0838, "ticksFromEntry": 4, "secondsFromRelease": 660, "notes": "Faded most of the move back — liquidity regime dominated." }
+      },
+      "excursions": { "maeToPeak1Ticks": 6, "maeBetweenPeaksTicks": 10, "mfeToPeak1Ticks": 14, "totalRangeTicks": 22 },
+      "rr": { "peak1Tight": 1.6, "peak1Standard": 1.1, "peak2Standard": 0.6 },
+      "classification": {
+        "directionalQuality": "MIXED",
+        "maeQuality": "MODERATE_MAE",
+        "rrQuality": "ACCEPTABLE",
+        "tradabilityGrade": "C",
+        "tradabilityScore": 0.48
+      },
+      "screenshots": [
+        { "type": "PRE_RELEASE", "timestamp": "2026-05-29T07:14:30.000Z", "path": "assets/6E/pre_release.png" },
+        { "type": "PEAK_1", "timestamp": "2026-05-29T07:32:00.000Z", "path": "assets/6E/peak1.png" },
+        { "type": "MAE_BETWEEN_PEAKS", "timestamp": "2026-05-29T07:41:00.000Z", "path": "assets/6E/mae_between_peaks.png" }
+      ],
+      "notes": "Reaction was real but shallow and quickly faded. The number mattered less than the overnight liquidity regime."
+    },
+    {
+      "symbol": "GC",
+      "role": "SECONDARY",
+      "source": "QUANTOWER",
+      "direction": "LONG",
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T07:33:10.000Z", "price": 3406.2, "ticksFromEntry": 35, "secondsFromRelease": 190 }
+      },
+      "excursions": { "maeToPeak1Ticks": 22, "mfeToPeak1Ticks": 35, "totalRangeTicks": 58 },
+      "rr": { "peak1Standard": 1.0, "peak2Standard": 0.7 },
+      "classification": { "directionalQuality": "MIXED", "maeQuality": "MODERATE_MAE", "rrQuality": "POOR", "tradabilityGrade": "C", "tradabilityScore": 0.41 },
+      "screenshots": [],
+      "notes": "Marginal inverse-EUR bid. Not worth the spread at this hour."
+    },
+    {
+      "symbol": "RTY",
+      "role": "CONFIRMATION",
+      "source": "QUANTOWER",
+      "direction": "NONE",
+      "excursions": { "totalRangeTicks": 40 },
+      "classification": { "directionalQuality": "POOR", "tradabilityGrade": "D" },
+      "screenshots": [],
+      "notes": "US index barely reacted to EU data overnight — confirmation that this is a EUR-local event, not a global risk driver. Tracked only to rule out a cross-asset move."
+    },
+    {
+      "symbol": "NQ",
+      "role": "CONFIRMATION",
+      "source": "QUANTOWER",
+      "direction": "NONE",
+      "excursions": { "totalRangeTicks": 55 },
+      "classification": { "directionalQuality": "POOR", "tradabilityGrade": "D" },
+      "screenshots": [],
+      "notes": "No meaningful overnight reaction. Confirms EU PMIs don't move US tech absent a surprise of much larger magnitude."
+    }
+  ],
+  "headlines": [
+    {
+      "timestamp": "2026-05-29T07:15:00.000Z",
+      "text": "France Flash Manufacturing PMI 50.1 (Forecast 49.4) — back above 50",
+      "source": "FINANCIALJUICE",
+      "relevance": "MEDIUM",
+      "category": "release_related",
+      "possibleNewInformationEvent": false,
+      "likelyMarketEffect": "no_visible_effect"
+    },
+    {
+      "timestamp": "2026-05-29T07:30:00.000Z",
+      "text": "Germany Flash Manufacturing PMI 47.0 (Forecast 48.5) — misses, drags EZ composite below 50",
+      "source": "FINANCIALJUICE",
+      "relevance": "HIGH",
+      "category": "release_related",
+      "possibleNewInformationEvent": true,
+      "likelyMarketEffect": "reinforced_existing_move"
+    },
+    {
+      "timestamp": "2026-05-29T07:48:00.000Z",
+      "text": "ECB's Lagarde: disinflation 'well on track', data-dependent on next steps",
+      "source": "FINANCIALJUICE",
+      "relevance": "MEDIUM",
+      "category": "fed_central_bank",
+      "possibleNewInformationEvent": false,
+      "likelyMarketEffect": "no_visible_effect"
+    }
+  ],
+  "summary": {
+    "bestAsset": "6E (short, scalp only)",
+    "secondBestAsset": "GC (long)",
+    "worstAsset": "NQ / RTY (no reaction)",
+    "bestHoldingStyle": "AVOID_HIGH_MAE",
+    "keyHeadlineInterference": false,
+    "finalTakeaway": "Germany/Eurozone PMI alignment matters more than France alone. The German manufacturing miss was the real driver; France beating was noise. The 6E reaction was real but shallow and faded fast under the overnight liquidity regime.",
+    "learningNote": "Germany/Eurozone PMI alignment matters more than France alone. 04:00 (France-only) prints can be ignored if the liquidity regime dominates — wait for the 04:30 German/EZ composite to confirm before committing size."
+  },
+  "createdAt": "2026-05-29T08:10:00.000Z",
+  "updatedAt": "2026-05-29T08:10:00.000Z"
+}
