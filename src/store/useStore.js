@@ -937,3 +937,12 @@ export const useStore = create(
     }
   )
 );
+
+// Dev-only: expose the store to local automation. The auto-journal importer drives
+// the real importReleaseJournalPackage action (which matches/creates the playbook
+// release and links it) via CDP, so auto-journals integrate with manual journals
+// instead of landing in a separate releaseJournals list. Not exposed in the Netlify
+// production build (guarded by import.meta.env.DEV).
+if (import.meta.env?.DEV && typeof window !== 'undefined') {
+  window.__rsStore = useStore;
+}
