@@ -1,0 +1,11 @@
+# Regenerable demo artifacts (recreate with `npm run demo`)
+demo-output/
+samples/demo-*.jsonl
+samples/demo-*.json
+
+# Worker has no runtime deps today; defensive if that changes.
+node_modules/
+
+# Phase 4 news tee: generated DOM dump + python cache
+feed/fj_news_dump.html
+__pycache__/

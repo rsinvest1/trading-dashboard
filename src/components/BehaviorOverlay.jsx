@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, ShieldAlert, Lock, Pause, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ShieldAlert, Lock, Pause, RefreshCw, OctagonAlert, Square } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { guardStatus } from '../utils/dayGuard';
+import { fmtMoney } from '../utils/calculations';
 
 // ── Single hook: ticks the Behavior Engine every second ──────────────────
 export function useBehaviorTick() {
@@ -165,12 +167,58 @@ export function KillSwitchScreen() {
   );
 }
 
+// ── Top banner when the active release hits its -$ cap ───────────────────
+export function ReleaseCappedBanner() {
+  const trades   = useStore(s => s.trades);
+  const dayGuard = useStore(s => s.behaviorState.dayGuard);
+  const cfg      = useStore(s => s.settings.behavior);
+  const endRelease = useStore(s => s.endRelease);
+  const st = useMemo(() => guardStatus(trades, dayGuard, cfg), [trades, dayGuard, cfg]);
+  if (st.stop !== 'release_capped') return null;
+  return (
+    <div className="bg-accent-red text-white px-4 py-2.5 flex items-center justify-center gap-3 text-sm">
+      <OctagonAlert size={16} />
+      <span className="font-semibold uppercase tracking-wider text-[11px]">Release cap hit</span>
+      <span className="text-[12px] opacity-95">
+        “{st.active?.label}” reached {fmtMoney(-st.perReleaseCap)}. Stop this release.
+      </span>
+      <button onClick={endRelease}
+        className="ml-2 inline-flex items-center gap-1.5 bg-black/30 hover:bg-black/40 rounded px-2.5 py-1 text-[11px] font-semibold">
+        <Square size={11} /> End release
+      </button>
+    </div>
+  );
+}
+
+// ── Top banner when an account hits its per-account daily loss lock ───────
+export function DayLockBanner() {
+  const trades   = useStore(s => s.trades);
+  const dayGuard = useStore(s => s.behaviorState.dayGuard);
+  const cfg      = useStore(s => s.settings.behavior);
+  const accounts = useStore(s => s.accounts);
+  const st = useMemo(() => guardStatus(trades, dayGuard, cfg), [trades, dayGuard, cfg]);
+  if (!st.lockedAccounts.length) return null;
+  const acctName = (id) => accounts.find(a => a.id === id)?.firm_name || id;
+  return (
+    <div className="bg-accent-red text-white px-4 py-2.5 flex items-center justify-center gap-3 text-sm flex-wrap">
+      <Lock size={16} />
+      <span className="font-semibold uppercase tracking-wider text-[11px]">Daily loss lock</span>
+      <span className="text-[12px] opacity-95">
+        {st.lockedAccounts.map(id => `${acctName(id)} ${fmtMoney(st.accountPnl[id])}`).join(' · ')}
+        {' '}hit the {fmtMoney(-st.dailyLossLock)} cap — closed for the session (resets 18:00 ET).
+      </span>
+    </div>
+  );
+}
+
 // ── Composite root component ─────────────────────────────────────────────
 export default function BehaviorOverlay() {
   useBehaviorTick();
   return (
     <>
+      <DayLockBanner />
       <PauseCountdown />
+      <ReleaseCappedBanner />
       <RecoveryBanner />
       <KillSwitchScreen />
     </>

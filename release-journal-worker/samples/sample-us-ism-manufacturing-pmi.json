@@ -1,0 +1,132 @@
+{
+  "releaseId": "ism_manufacturing_pmi_2026-05-29T1400Z",
+  "releaseKey": "ISM Manufacturing PMI",
+  "releaseName": "US ISM Manufacturing PMI",
+  "region": "US",
+  "scheduledTime": "2026-05-29T14:00:00.000Z",
+  "actualReleaseTime": "2026-05-29T14:00:01.000Z",
+  "releaseTemplate": "pmi_release",
+  "importance": "HIGH",
+  "holdingWindow": {
+    "startTime": "2026-05-29T13:59:30.000Z",
+    "endTime": "2026-05-29T14:15:00.000Z",
+    "durationSec": 930
+  },
+  "numbers": {
+    "lines": [
+      { "name": "ISM Manufacturing PMI", "actual": 48.7, "forecast": 49.5, "previous": 49.2, "surprise": -0.8, "weight": 1.0 },
+      { "name": "ISM Manufacturing Prices Paid", "actual": 57.1, "forecast": 55.0, "previous": 54.9, "surprise": 2.1, "weight": 0.5 },
+      { "name": "ISM Manufacturing New Orders", "actual": 47.2, "forecast": 49.0, "previous": 48.3, "surprise": -1.8, "weight": 0.6 },
+      { "name": "ISM Manufacturing Employment", "actual": 46.5, "forecast": "", "previous": 47.1, "surprise": -0.6, "weight": 0.4 }
+    ],
+    "aggregateSurpriseScore": -1.1,
+    "interpretation": "Soft headline (sub-50 contraction, miss vs consensus) with hot prices paid — a mild stagflationary tilt. New orders and employment both weaker. Net risk-off for equities; mild USD bid from the prices component."
+  },
+  "trackedAssets": [
+    {
+      "symbol": "RTY",
+      "role": "PRIMARY",
+      "source": "QUANTOWER",
+      "direction": "SHORT",
+      "entryModels": {
+        "immediate": { "timestamp": "2026-05-29T14:00:05.000Z", "price": 2099.4 },
+        "confirmed": { "timestamp": "2026-05-29T14:00:38.000Z", "price": 2096.9 }
+      },
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T14:01:10.000Z", "price": 2090.2, "ticksFromEntry": 92, "secondsFromRelease": 70 },
+        "retrace1": { "timestamp": "2026-05-29T14:03:30.000Z", "price": 2095.1, "ticksFromEntry": 43, "secondsFromRelease": 210 },
+        "peak2": { "timestamp": "2026-05-29T14:09:50.000Z", "price": 2088.0, "ticksFromEntry": 114, "secondsFromRelease": 590 }
+      },
+      "excursions": { "maeToPeak1Ticks": 18, "maeBetweenPeaksTicks": 49, "mfeToPeak1Ticks": 92, "mfeToPeak2Ticks": 114, "totalRangeTicks": 132 },
+      "rr": { "peak1Tight": 3.0, "peak1Standard": 2.2, "peak2Standard": 2.4, "peak2Wide": 1.7 },
+      "classification": {
+        "directionalQuality": "GOOD",
+        "maeQuality": "MODERATE_MAE",
+        "rrQuality": "GOOD",
+        "tradabilityGrade": "A",
+        "tradabilityScore": 0.74
+      },
+      "screenshots": [
+        { "type": "PRE_RELEASE", "timestamp": "2026-05-29T13:59:30.000Z", "path": "assets/RTY/pre_release.png" },
+        { "type": "RELEASE_NUMBERS", "timestamp": "2026-05-29T14:00:02.000Z", "path": "release_numbers.png" },
+        { "type": "RELEASE_IMPULSE", "timestamp": "2026-05-29T14:00:06.000Z", "path": "assets/RTY/release_impulse.png" },
+        { "type": "PEAK_1", "timestamp": "2026-05-29T14:01:10.000Z", "path": "assets/RTY/peak1.png" },
+        { "type": "PEAK_2", "timestamp": "2026-05-29T14:09:50.000Z", "path": "assets/RTY/peak2.png" }
+      ],
+      "notes": "Standard contraction-print short. Decent but not a blowout — prices-paid kept a bid under the tape and capped the second leg."
+    },
+    {
+      "symbol": "NQ",
+      "role": "SECONDARY",
+      "source": "QUANTOWER",
+      "direction": "SHORT",
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T14:01:25.000Z", "price": 21795.0, "ticksFromEntry": 120, "secondsFromRelease": 85 }
+      },
+      "excursions": { "maeToPeak1Ticks": 30, "mfeToPeak1Ticks": 120, "totalRangeTicks": 165 },
+      "rr": { "peak1Standard": 1.8, "peak2Standard": 1.1 },
+      "classification": { "directionalQuality": "GOOD", "maeQuality": "MODERATE_MAE", "rrQuality": "ACCEPTABLE", "tradabilityGrade": "B", "tradabilityScore": 0.6 },
+      "screenshots": [
+        { "type": "PEAK_1", "timestamp": "2026-05-29T14:01:25.000Z", "path": "assets/NQ/peak1.png" }
+      ],
+      "notes": "Followed RTY down but recovered first. Secondary, not the lead."
+    },
+    {
+      "symbol": "GC",
+      "role": "SECONDARY",
+      "source": "QUANTOWER",
+      "direction": "LONG",
+      "peaks": {
+        "peak1": { "timestamp": "2026-05-29T14:02:40.000Z", "price": 3418.9, "ticksFromEntry": 70, "secondsFromRelease": 160, "notes": "Prices-paid beat helped gold this time." }
+      },
+      "excursions": { "maeToPeak1Ticks": 20, "mfeToPeak1Ticks": 70, "totalRangeTicks": 96 },
+      "rr": { "peak1Standard": 1.9, "peak2Standard": 1.6 },
+      "classification": { "directionalQuality": "GOOD", "maeQuality": "LOW_MAE", "rrQuality": "GOOD", "tradabilityGrade": "A", "tradabilityScore": 0.71 },
+      "screenshots": [
+        { "type": "RELEASE_IMPULSE", "timestamp": "2026-05-29T14:02:40.000Z", "path": "assets/GC/release_impulse.png" }
+      ],
+      "notes": "Hot prices-paid component gave gold a cleaner bid than on a pure growth scare. Low MAE — a viable second vehicle here."
+    },
+    {
+      "symbol": "6E",
+      "role": "CONFIRMATION",
+      "source": "IG_CFD",
+      "direction": "SHORT",
+      "excursions": { "totalRangeTicks": 34 },
+      "classification": { "directionalQuality": "MIXED", "tradabilityGrade": "C" },
+      "screenshots": [],
+      "notes": "Mild USD bid from prices-paid pushed EUR down slightly — weak, noisy confirmation only."
+    }
+  ],
+  "headlines": [
+    {
+      "timestamp": "2026-05-29T14:00:00.000Z",
+      "text": "US ISM Manufacturing PMI 48.7 (Forecast 49.5, Previous 49.2)",
+      "source": "FINANCIALJUICE",
+      "relevance": "HIGH",
+      "category": "release_related",
+      "possibleNewInformationEvent": true,
+      "likelyMarketEffect": "reinforced_existing_move"
+    },
+    {
+      "timestamp": "2026-05-29T14:00:00.000Z",
+      "text": "US ISM Manufacturing Prices Paid 57.1 (Forecast 55.0) — inflation component hotter",
+      "source": "FINANCIALJUICE",
+      "relevance": "HIGH",
+      "category": "inflation",
+      "possibleNewInformationEvent": true,
+      "likelyMarketEffect": "introduced_conflicting_information"
+    }
+  ],
+  "summary": {
+    "bestAsset": "RTY (short)",
+    "secondBestAsset": "GC (long)",
+    "worstAsset": "6E",
+    "bestHoldingStyle": "SCALP_TO_PEAK_1",
+    "keyHeadlineInterference": true,
+    "finalTakeaway": "Contraction headline drove a clean first leg short in RTY, but the hot prices-paid component introduced conflicting (stagflationary) information that bid gold and capped the equity continuation. Scalp to peak 1 was the higher-confidence play; the second leg needed wider stops.",
+    "learningNote": "On ISM, always read prices-paid alongside the headline. A soft PMI + hot prices = muted equity continuation and a viable long-gold leg. Don't over-hold the index short when the inflation sub-index runs hot."
+  },
+  "createdAt": "2026-05-29T14:20:00.000Z",
+  "updatedAt": "2026-05-29T14:20:00.000Z"
+}

@@ -45,12 +45,16 @@ export default function QuickAddTrade() {
 
   function submit() {
     if (!draft.account_id) return;
-    const gate = canTradeNow();
+    const gate = canTradeNow(draft.account_id);
     if (!gate.allowed) {
       const msg = gate.reason === 'recovery_spacing'
         ? `Recovery mode: wait ${Math.ceil(gate.wait_sec / 60)}m more between trades.`
         : gate.reason === 'recovery_cap'
         ? 'Recovery mode trade-cap reached for this hour.'
+        : gate.reason === 'day_locked'
+        ? 'Daily loss lock hit on this account — closed for the session.'
+        : gate.reason === 'release_capped'
+        ? 'This release hit its loss cap. End it to continue.'
         : `Trading is ${gate.reason}.`;
       setGateMsg(msg);
       setTimeout(() => setGateMsg(null), 4000);

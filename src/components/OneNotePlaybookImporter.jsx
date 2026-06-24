@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore';
 import { parseOneNoteMhtml } from '../utils/oneNoteParser';
 import { downscaleDataUrl } from '../utils/image';
 import { putImage, newImageId } from '../utils/imageStore';
-import { EVENT_KEYS } from '../utils/events';
+import { CANONICAL_EVENT_KEYS, resolveCanonicalEventKey } from '../utils/events';
 
 function readFileText(file) {
   return new Promise((resolve, reject) => {
@@ -87,14 +87,15 @@ export default function OneNotePlaybookImporter({ onClose }) {
   const sizeWarn = includeImages && estBytes > 3.5 * 1024 * 1024;
 
   function applyBulkKey() {
-    if (!bulkEventKey.trim()) return;
-    setDrafts(ds => ds.map(d => ({ ...d, event_key: bulkEventKey.trim() })));
+    const key = resolveCanonicalEventKey(bulkEventKey, '');
+    if (!key) return;
+    setDrafts(ds => ds.map(d => ({ ...d, event_key: key })));
   }
 
   async function confirmImport() {
     setStage('importing');
     // Apply bulk event key to any draft that still has none
-    const fallbackKey = bulkEventKey.trim() || null;
+    const fallbackKey = resolveCanonicalEventKey(bulkEventKey, '') || null;
     const out = [];
     for (const d of selected) {
       let charts = [];
@@ -110,7 +111,7 @@ export default function OneNotePlaybookImporter({ onClose }) {
         title: (d.title || '').trim() || 'Untitled OneNote page',
         date: d.date || '',
         setup_name: '',
-        event_key: (d.event_key || '').trim() || fallbackKey,
+        event_key: resolveCanonicalEventKey(d.event_key || d.title, fallbackKey) || fallbackKey,
         instruments: d.instruments || [],
         catalysts: [],
         context: d.context || '',
@@ -243,7 +244,7 @@ export default function OneNotePlaybookImporter({ onClose }) {
               </div>
 
               <datalist id="onenote-event-keys">
-                {EVENT_KEYS.map(k => <option key={k} value={k} />)}
+                {CANONICAL_EVENT_KEYS.map(k => <option key={k} value={k} />)}
               </datalist>
 
               {/* Per-draft rows */}

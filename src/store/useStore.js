@@ -3,6 +3,11 @@ import { persist } from 'zustand/middleware';
 import { applyEvents } from '../utils/positionAggregator';
 import { tickerFromSymbol } from '../utils/instruments';
 import { extractImages, inlineImages, putImages, clearAllImages } from '../utils/imageStore';
+import { normalizeReleaseJournal } from '../utils/releaseJournalSchema';
+import { applyReleaseJournalImport } from '../utils/releaseAssociation';
+import { resolveCanonicalEventKey, isDateLikeEventKey } from '../utils/events';
+import { defaultDayGuard, guardStatus } from '../utils/dayGuard';
+import { currentSessionDate } from '../utils/calculations';
 
 const DEFAULT_BEHAVIOR_TAGS = [
   'Revenge trade', 'FOMO entry', 'Stuck to plan', 'Early exit',
@@ -75,6 +80,16 @@ const DEFAULT_ACCOUNTS = [
     current_balance: 150000
   },
   {
+    id: 'tradeify-s2f-100k',
+    firm_name: 'Tradeify S2F $100k',
+    account_size: 100000,
+    trailing_drawdown_limit: 4000,
+    daily_loss_limit: 2500,
+    max_daily_profit: 1200,
+    eod_rule: true,
+    current_balance: 100000
+  },
+  {
     id: 'daytraders-sts-150k',
     firm_name: 'Daytraders.com Straight to Sim Funded EOD 150k',
     account_size: 150000,
@@ -82,6 +97,15 @@ const DEFAULT_ACCOUNTS = [
     daily_loss_limit: 3750,
     eod_rule: true,
     current_balance: 150000
+  },
+  {
+    id: 'etf-250k',
+    firm_name: 'Elite Trader Funding $250k',
+    account_size: 250000,
+    trailing_drawdown_limit: 6500,
+    daily_loss_limit: 0,        // ETF has no daily loss limit — intraday trailing only
+    eod_rule: false,            // INTRADAY trailing drawdown (not End-of-Day)
+    current_balance: 250000
   }
 ];
 
@@ -90,6 +114,7 @@ function tradeDefaults() {
   return {
     tp_levels: [],
     sl_levels: [],
+    release_id: null,          // links a live trade to its release session (day-guard)
     duration_sec: null,        // seconds held: position open → flat (TP/SL/exit)
     planned_target_dollars: null,
     planned_risk_dollars: null,
@@ -117,13 +142,14 @@ function tradeDefaults() {
 // and only picks known fields (ignores transient draft fields like `_meta`).
 // Shared by addPlaybook (one) and addPlaybooks (batch / OneNote import).
 function playbookDefaults(p = {}) {
+  const eventKey = resolveCanonicalEventKey(p.event_key || '', '');
   return {
     id: uid(),
     title: p.title ?? '',
     date: p.date ?? new Date().toISOString().slice(0, 10),
     time: p.time ?? '',
     setup_name: p.setup_name ?? '',
-    event_key: p.event_key ?? null,   // links playbook to a recurring release event
+    event_key: eventKey && !isDateLikeEventKey(eventKey) ? eventKey : null,   // links playbook to a recurring release event
     instruments: p.instruments ?? [],
     catalysts: p.catalysts ?? [],
     context: p.context ?? '',
@@ -148,7 +174,10 @@ function defaultBehaviorSettings() {
     recovery_idle_minutes_to_exit: 30,
     override_min_reason_chars: 20,
     sound_alerts: true,
-    browser_notifications: false
+    browser_notifications: false,
+    // ── Hard day-guard limits (client-side; independent of Netlify) ──────
+    daily_loss_lock: 1200,      // $ — PER-ACCOUNT hard lock for the session day
+    per_release_loss_cap: 600   // $ — max loss on a single release
   };
 }
 
@@ -164,7 +193,8 @@ function defaultBehaviorState() {
     last_trade_at: null,
     last_emotion: null,
     calm_streak: 0,
-    pending_classification_id: null  // id of trade awaiting modal
+    pending_classification_id: null, // id of trade awaiting modal
+    dayGuard: defaultDayGuard()      // per-session release counters + hard stops
   };
 }
 
@@ -283,6 +313,86 @@ function migrateV5toV6(state) {
   }
 }
 
+// ── Migration v6 → v7: add `releaseJournals` array for imported auto-journal
+//    packages (Release Journal Worker output). Additive; existing data intact.
+function migrateV6toV7(state) {
+  return { ...state, releaseJournals: state?.releaseJournals ?? [] };
+}
+
+// ── Migration v7 → v8: seed the Elite Trader Funding $250k account for existing
+//    installs (persisted `accounts` overrides DEFAULT_ACCOUNTS on rehydrate).
+//    Additive — appended only if not already present.
+function migrateV7toV8(state) {
+  const accounts = Array.isArray(state?.accounts) ? [...state.accounts] : [];
+  if (!accounts.some(a => a.id === 'etf-250k')) {
+    accounts.push({
+      id: 'etf-250k',
+      firm_name: 'Elite Trader Funding $250k',
+      account_size: 250000,
+      trailing_drawdown_limit: 6500,
+      daily_loss_limit: 0,
+      eod_rule: false,
+      current_balance: 250000
+    });
+  }
+  return { ...state, accounts };
+}
+
+// ── Migration v8 → v9: ETF $250k is INTRADAY trailing drawdown, not EOD.
+//    Flip the seeded account's eod_rule for installs already on v8.
+function migrateV8toV9(state) {
+  const accounts = Array.isArray(state?.accounts)
+    ? state.accounts.map(a => a.id === 'etf-250k' ? { ...a, eod_rule: false } : a)
+    : state?.accounts;
+  return { ...state, accounts };
+}
+
+// ── Migration v9 → v10: add the hard day-guard. Seeds the new behavior limits
+//    (daily_loss_lock, max_releases_per_day, per_release_loss_cap), the
+//    `dayGuard` behavior-state slice, and a `release_id` default on trades.
+function migrateV9toV10(state) {
+  const behavior = { ...defaultBehaviorSettings(), ...(state?.settings?.behavior || {}) };
+  return {
+    ...state,
+    settings: { ...(state?.settings || {}), behavior },
+    behaviorState: {
+      ...(state?.behaviorState || defaultBehaviorState()),
+      dayGuard: state?.behaviorState?.dayGuard || defaultDayGuard()
+    },
+    trades: (state?.trades || []).map(t => (t.release_id === undefined ? { ...t, release_id: null } : t))
+  };
+}
+
+// ── Migration v10 → v11: seed Tradeify S2F $100k account for existing
+//    installs. Additive — appended only if not already present.
+function migrateV10toV11(state) {
+  const accounts = Array.isArray(state?.accounts) ? [...state.accounts] : [];
+  if (!accounts.some(a => a.id === 'tradeify-s2f-100k')) {
+    accounts.push({
+      id: 'tradeify-s2f-100k',
+      firm_name: 'Tradeify S2F $100k',
+      account_size: 100000,
+      trailing_drawdown_limit: 4000,
+      daily_loss_limit: 2500,
+      max_daily_profit: 1200,
+      eod_rule: true,
+      current_balance: 100000
+    });
+  }
+  return { ...state, accounts };
+}
+
+// ── Migration v11 → v12: apply Tradeify S2F $100k risk rules.
+//    Daily loss is $2,500; daily profit target/cap is $1,200 for 20% consistency.
+function migrateV11toV12(state) {
+  const accounts = Array.isArray(state?.accounts)
+    ? state.accounts.map(a => a.id === 'tradeify-s2f-100k'
+      ? { ...a, daily_loss_limit: 2500, max_daily_profit: 1200 }
+      : a)
+    : state?.accounts;
+  return { ...state, accounts };
+}
+
 export const useStore = create(
   persist(
     (set, get) => ({
@@ -293,6 +403,7 @@ export const useStore = create(
       strategies: [],        // ← reusable trading models with rule checklists
       playbooks: [],
       playbookEventMeta: {}, // event-level metadata keyed by event_key: { rating }
+      releaseJournals: [],   // imported auto-journal packages (Release Journal Worker output)
       tendencies: [],
       accounts: DEFAULT_ACCOUNTS,
       settings: {
@@ -385,6 +496,7 @@ export const useStore = create(
           time_since_last_trade_sec != null &&
           time_since_last_trade_sec < cfg.impulsive_window_sec
         );
+        const activeReleaseId = s.behaviorState.dayGuard?.active_release_id || null;
         const trade = {
           id,
           ...tradeDefaults(),
@@ -392,7 +504,8 @@ export const useStore = create(
           ingested_at: now.toISOString(),
           time_since_last_trade_sec,
           is_post_error_trade,
-          impulsive_trade_flag
+          impulsive_trade_flag,
+          release_id: rawTrade.release_id ?? activeReleaseId
         };
         set({
           trades: [...s.trades, trade],
@@ -415,10 +528,14 @@ export const useStore = create(
       // Recovery-mode gate — UI calls this BEFORE Quick Add or live ingest
       // to check if a new trade is allowed. Returns:
       //   { allowed: true } | { allowed: false, reason: '...', wait_sec: N }
-      canTradeNow: () => {
+      canTradeNow: (accountId) => {
         const s = get();
         const bs = s.behaviorState;
         const cfg = s.settings.behavior || defaultBehaviorSettings();
+        // ── Hard day-guard gates (client-side; independent of Netlify) ──
+        const dg = guardStatus(s.trades, bs.dayGuard, cfg);
+        if (accountId && dg.lockedAccounts.includes(accountId)) return { allowed: false, reason: 'day_locked' };
+        if (dg.releaseCapped) return { allowed: false, reason: 'release_capped' };
         if (bs.mode === 'paused' || bs.mode === 'locked') {
           return { allowed: false, reason: bs.mode };
         }
@@ -510,6 +627,14 @@ export const useStore = create(
         let bs = { ...s.behaviorState };
         let changed = false;
 
+        // Day-guard session rollover (CME session date) — reset the day's
+        // release counters + hard-stop overrides when the session flips.
+        const session = currentSessionDate();
+        if (bs.dayGuard?.session_date && bs.dayGuard.session_date !== session) {
+          bs.dayGuard = defaultDayGuard();
+          changed = true;
+        }
+
         // Expire pause
         if (bs.mode === 'paused' && bs.pause_until && new Date(bs.pause_until) <= now) {
           bs.mode = 'normal';
@@ -569,6 +694,64 @@ export const useStore = create(
 
       // Manual reset of behavior state (e.g. start of new day)
       resetBehaviorState: () => set({ behaviorState: defaultBehaviorState() }),
+
+      // ── Release sessions / hard day-guard (all client-side) ───────────
+      // Begin a new release session (e.g. "08:30 CPI"). Blocked if the day is
+      // locked, a release is already active, or the daily release cap is hit.
+      startRelease: (label) => set((s) => {
+        const session = currentSessionDate();
+        let g = s.behaviorState.dayGuard || defaultDayGuard();
+        if (g.session_date && g.session_date !== session) g = defaultDayGuard(); // session rollover
+        const st = guardStatus(s.trades, g, s.settings.behavior, session);
+        if (!st.canStartRelease) return {};
+        const id = uid();
+        const name = (label || '').trim() || `Release ${g.releases.length + 1}`;
+        return {
+          behaviorState: {
+            ...s.behaviorState,
+            dayGuard: {
+              ...g,
+              session_date: session,
+              releases: [...g.releases, { id, label: name, started_at: new Date().toISOString(), ended_at: null }],
+              active_release_id: id
+            }
+          }
+        };
+      }),
+
+      // Close the active release (counts toward the daily release cap).
+      endRelease: () => set((s) => {
+        const g = s.behaviorState.dayGuard || defaultDayGuard();
+        if (!g.active_release_id) return {};
+        return {
+          behaviorState: {
+            ...s.behaviorState,
+            dayGuard: {
+              ...g,
+              releases: g.releases.map(r => r.id === g.active_release_id
+                ? { ...r, ended_at: r.ended_at || new Date().toISOString() } : r),
+              active_release_id: null
+            }
+          }
+        };
+      }),
+
+      // Abort the active release (it never fired) — frees the slot so it does
+      // NOT count toward max_releases_per_day.
+      cancelRelease: () => set((s) => {
+        const g = s.behaviorState.dayGuard || defaultDayGuard();
+        if (!g.active_release_id) return {};
+        return {
+          behaviorState: {
+            ...s.behaviorState,
+            dayGuard: {
+              ...g,
+              releases: g.releases.filter(r => r.id !== g.active_release_id),
+              active_release_id: null
+            }
+          }
+        };
+      }),
 
       addTrade: (t) => set((s) => ({ trades: [...s.trades, { id: uid(), ...tradeDefaults(), ...t }] })),
       addTrades: (newTrades) => set((s) => ({
@@ -635,8 +818,9 @@ export const useStore = create(
 
       // Create an empty, first-class event key (shows as a 0-release group via meta).
       createEventKey: (key) => set((s) => {
-        const k = (key || '').trim();
+        const k = resolveCanonicalEventKey(key, '');
         if (!k) return {};
+        if (isDateLikeEventKey(k)) return {};
         const exists = s.playbookEventMeta[k] || s.playbooks.some(p => p.event_key === k);
         if (exists) return {};                      // no-op; UI navigates to the existing one
         return { playbookEventMeta: { ...s.playbookEventMeta, [k]: {} } };
@@ -644,8 +828,9 @@ export const useStore = create(
       // Rename a key across all releases + metadata. If `newKey` already exists this
       // MERGES (releases re-point to it; target meta wins on field collisions).
       renameEventKey: (oldKey, newKey) => set((s) => {
-        const from = (oldKey || '').trim(), to = (newKey || '').trim();
+        const from = (oldKey || '').trim(), to = resolveCanonicalEventKey(newKey, '');
         if (!from || !to || from === to) return {};
+        if (isDateLikeEventKey(to)) return {};
         const meta = { ...s.playbookEventMeta };
         meta[to] = { ...(meta[from] ?? {}), ...(meta[to] ?? {}) };
         delete meta[from];
@@ -663,6 +848,30 @@ export const useStore = create(
           playbookEventMeta: meta,
         };
       }),
+
+      // ── Release Journals (auto-journal packages) ──────────────────────
+      // Additive only. Imported packages are normalized to a safe shape and
+      // deduped by releaseId so re-importing the same sample is a no-op.
+      // These never touch trade stats / execution — they are review data.
+      addReleaseJournal: (j) => set((s) => {
+        const norm = normalizeReleaseJournal(j);
+        const others = (s.releaseJournals || []).filter(x => x.releaseId !== norm.releaseId);
+        return { releaseJournals: [...others, norm] };
+      }),
+      importReleaseJournalPackage: (j) => {
+        const next = applyReleaseJournalImport(get(), j, { uid });
+        set(next.state);
+        return next.result;
+      },
+      updateReleaseJournal: (releaseId, patch) => set((s) => ({
+        releaseJournals: (s.releaseJournals || []).map(j =>
+          j.releaseId === releaseId
+            ? normalizeReleaseJournal({ ...j, ...patch, updatedAt: new Date().toISOString() })
+            : j)
+      })),
+      deleteReleaseJournal: (releaseId) => set((s) => ({
+        releaseJournals: (s.releaseJournals || []).filter(x => x.releaseId !== releaseId)
+      })),
 
       addTendency: (t) => set((s) => ({
         tendencies: [...s.tendencies, {
@@ -706,6 +915,7 @@ export const useStore = create(
           trades: withImages.trades, sessions: s.sessions, bestOpps: s.bestOpps,
           patterns: s.patterns, strategies: s.strategies,
           playbooks: withImages.playbooks, playbookEventMeta: s.playbookEventMeta,
+          releaseJournals: s.releaseJournals,
           tendencies: s.tendencies,
           accounts: s.accounts, settings: s.settings,
           exported_at: new Date().toISOString(),
@@ -742,20 +952,21 @@ export const useStore = create(
           strategies: next.strategies ?? [],
           playbooks: next.playbooks  ?? [],
           playbookEventMeta: next.playbookEventMeta ?? {},
+          releaseJournals: next.releaseJournals ?? [],
           tendencies: next.tendencies ?? [],
           accounts:  next.accounts   ?? DEFAULT_ACCOUNTS,
           settings: {
             tag_categories: next.settings?.tag_categories || defaultTagCategories(),
             csv_column_map: next.settings?.csv_column_map || {},
             csv_account_map: next.settings?.csv_account_map || {},
-            behavior: next.settings?.behavior || defaultBehaviorSettings()
+            behavior: { ...defaultBehaviorSettings(), ...(next.settings?.behavior || {}) }
           }
         });
       }
     }),
     {
       name: 'trading-dashboard-v2',
-      version: 6,
+      version: 12,
       migrate: (persisted, fromVersion) => {
         let next = persisted || {};
         if (fromVersion < 1) next = migrateV0toV1(next);
@@ -764,6 +975,12 @@ export const useStore = create(
         if (fromVersion < 4) next = migrateV3toV4(next);
         if (fromVersion < 5) next = migrateV4toV5(next);
         if (fromVersion < 6) next = migrateV5toV6(next);
+        if (fromVersion < 7) next = migrateV6toV7(next);
+        if (fromVersion < 8) next = migrateV7toV8(next);
+        if (fromVersion < 9) next = migrateV8toV9(next);
+        if (fromVersion < 10) next = migrateV9toV10(next);
+        if (fromVersion < 11) next = migrateV10toV11(next);
+        if (fromVersion < 12) next = migrateV11toV12(next);
         return next;
       },
       // Flush images extracted during the v5→v6 migration into IndexedDB once
@@ -778,3 +995,12 @@ export const useStore = create(
     }
   )
 );
+
+// Dev-only: expose the store to local automation. The auto-journal importer drives
+// the real importReleaseJournalPackage action (which matches/creates the playbook
+// release and links it) via CDP, so auto-journals integrate with manual journals
+// instead of landing in a separate releaseJournals list. Not exposed in the Netlify
+// production build (guarded by import.meta.env.DEV).
+if (import.meta.env?.DEV && typeof window !== 'undefined') {
+  window.__rsStore = useStore;
+}

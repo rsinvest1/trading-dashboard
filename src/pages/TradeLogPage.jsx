@@ -61,6 +61,15 @@ function TagPills({ tags, categories }) {
   );
 }
 
+function playbookLabel(p) {
+  const parts = [];
+  if (p.event_key) parts.push(p.event_key);
+  const instance = [p.date, p.time].filter(Boolean).join(' ');
+  if (instance) parts.push(instance);
+  parts.push(p.title || p.setup_name || 'Untitled release');
+  return parts.filter(Boolean).join(' - ');
+}
+
 export default function TradeLogPage() {
   const trades    = useStore(s => s.trades);
   const accounts  = useStore(s => s.accounts);
@@ -283,7 +292,7 @@ export default function TradeLogPage() {
                         <option value="">— none —</option>
                         {playbooksSorted.map(p => (
                           <option key={p.id} value={p.id}>
-                            {p.title || p.setup_name || `Playbook ${p.date || ''}`}
+                            {playbookLabel(p)}
                           </option>
                         ))}
                       </select>

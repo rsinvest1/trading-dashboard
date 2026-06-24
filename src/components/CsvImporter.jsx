@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Upload, AlertCircle, Check, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { parseQuantowerCsv } from '../utils/csvParser';
+import { detectAndParse } from '../utils/csvParser';
 import { aggregateFills, defaultAccountMap, tradeFingerprint } from '../utils/tradeAggregator';
 import { fmtMoney } from '../utils/calculations';
 
@@ -18,6 +18,7 @@ export default function CsvImporter({ onClose }) {
   const [errors, setErrors] = useState([]);
   const [stats, setStats] = useState({ fills: 0, trades: 0, dupes: 0, fresh: 0 });
   const [filename, setFilename] = useState('');
+  const [format, setFormat] = useState('');
   // Live mode: each fresh trade goes through the Behavior Engine
   // (auto-on when all fresh trades are from today)
   const [liveMode, setLiveMode] = useState(false);
@@ -30,7 +31,8 @@ export default function CsvImporter({ onClose }) {
   }
 
   function parseText(text) {
-    const { fills, errors: parseErrors } = parseQuantowerCsv(text);
+    const { fills, errors: parseErrors, format: fmt } = detectAndParse(text);
+    setFormat(fmt);
     if (parseErrors.length && fills.length === 0) {
       setErrors(parseErrors);
       return;
@@ -97,8 +99,10 @@ export default function CsvImporter({ onClose }) {
             <>
               <label className="border-2 border-dashed border-bg-border hover:border-accent-green rounded-lg p-8 flex flex-col items-center gap-3 cursor-pointer transition-colors">
                 <Upload size={32} className="text-text-secondary" />
-                <div className="text-sm text-text-primary">Drop a Quantower / Rithmic CSV or click to browse</div>
-                <div className="text-xs text-text-muted">Expected columns: Account, Date/Time, Symbol, Side, Quantity, Price, Net P/L</div>
+                <div className="text-sm text-text-primary">Drop a Quantower / Rithmic / Tradovate CSV or click to browse</div>
+                <div className="text-xs text-text-muted">Quantower: Account, Date/Time, Symbol, Side, Quantity, Price, Net P/L</div>
+                <div className="text-xs text-text-muted">Tradovate (Performance → Trades): symbol, qty, buyPrice, sellPrice, pnl, boughtTimestamp, soldTimestamp</div>
+                <div className="text-xs text-text-muted">Tradovate (Orders export): Account, B/S, Contract, avgPrice, filledQty, Fill Time — P&L computed from prices</div>
                 <input
                   type="file"
                   accept=".csv,text/csv"
@@ -116,7 +120,14 @@ export default function CsvImporter({ onClose }) {
 
           {stage === 'parsed' && (
             <>
-              <div className="text-xs text-text-secondary">Parsed <span className="text-text-primary font-mono">{filename}</span></div>
+              <div className="text-xs text-text-secondary">
+                Parsed <span className="text-text-primary font-mono">{filename}</span>
+                {format && (
+                  <span className="ml-2 px-1.5 py-0.5 rounded bg-bg-hover text-text-muted uppercase tracking-wider text-[10px]">
+                    {format}
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-5 gap-2">
                 <div className="card p-3">
                   <div className="stat-label">Fills</div>
