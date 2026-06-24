@@ -22,13 +22,13 @@ const w = windowFromRelease(cfg);
 const sleepReal = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 console.log(`[backfill] requesting ${w.fromUtc} .. ${w.toUtc} (ET ${w.date}) → ${folder}`);
-const { donePath } = await writeRequest(folder, w);
+const { donePath } = await writeRequest(folder, w, undefined, cfg);
 const done = await waitForDone(donePath, { now: () => Date.now(), sleep: sleepReal }, { timeoutMs: 120_000 });
 
-if (done?.ok) {
+if (done?.ok && done.rows > 0) {
   console.log(`[backfill] done: ${done.rows} rows → ${done.file}. Build the journal with:`);
   console.log(`  node src/cli.ts ${configPath} C:\\RSInvest\\journal-feed\\${done.file}`);
 } else {
-  console.error('[backfill] no response — is QT_HistoryBackfill running in Quantower with "Watch requests" on?');
+  console.error(`[backfill] no usable rows — ${done?.error || 'is QT_HistoryBackfill running in Quantower with "Watch requests" on?'}`);
   process.exit(2);
 }

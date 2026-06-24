@@ -17,10 +17,17 @@ import type { Tick } from './marketRecorder.ts';
 export const DEFAULT_REQUEST_FOLDER = 'C:\\RSInvest\\journal-feed\\backfill-requests';
 
 export type ReleaseLike = {
+  releaseKey?: string;
   actualReleaseTime?: string;
   scheduledTime: string;
   holdingWindowSec?: number;
   preRollSec?: number;
+  assets?: { symbol: string }[];
+  symbols?: string[];
+  contractMap?: Record<string, string>;
+  aggregation?: 'SECOND1' | 'TICK' | string;
+  minRowsPerSymbol?: number;
+  dataQuality?: any;
 };
 export type BackfillWindow = { fromUtc: string; toUtc: string; date: string };
 
@@ -59,14 +66,45 @@ export function hasCoverage(
   return true;
 }
 
-export const requestJson = (w: BackfillWindow) =>
-  JSON.stringify({ fromUtc: w.fromUtc, toUtc: w.toUtc, date: w.date });
+function symbolsFor(rel?: ReleaseLike): string[] {
+  return rel?.symbols ?? rel?.assets?.map(a => a.symbol) ?? [];
+}
 
-export type DoneResult = { ok: boolean; rows: number; file?: string };
+export const requestJson = (w: BackfillWindow, rel?: ReleaseLike) =>
+  JSON.stringify({
+    releaseKey: rel?.releaseKey,
+    fromUtc: w.fromUtc,
+    toUtc: w.toUtc,
+    date: w.date,
+    symbols: symbolsFor(rel),
+    contractMap: rel?.contractMap ?? {},
+    aggregation: rel?.aggregation ?? 'SECOND1',
+    minRowsPerSymbol: rel?.minRowsPerSymbol ?? 1,
+  });
+
+export type DoneResult = {
+  ok: boolean;
+  rows: number;
+  rowCounts?: Record<string, number>;
+  missingSymbols?: string[];
+  contracts?: Record<string, string>;
+  aggregation?: string;
+  file?: string;
+  error?: string;
+};
 export function parseDone(text: string): DoneResult | null {
   try {
     const o = JSON.parse(text);
-    return { ok: !!o.ok, rows: Number(o.rows) || 0, file: o.file };
+    return {
+      ok: !!o.ok,
+      rows: Number(o.rows) || 0,
+      rowCounts: o.rowCounts && typeof o.rowCounts === 'object' ? o.rowCounts : undefined,
+      missingSymbols: Array.isArray(o.missingSymbols) ? o.missingSymbols : undefined,
+      contracts: o.contracts && typeof o.contracts === 'object' ? o.contracts : undefined,
+      aggregation: o.aggregation,
+      file: o.file,
+      error: o.error,
+    };
   } catch { return null; }
 }
 
@@ -75,12 +113,12 @@ const exists = (p: string) => access(p).then(() => true, () => false);
 export type WaitIo = { now: () => number; sleep: (ms: number) => Promise<void> };
 
 export async function writeRequest(
-  folder: string, w: BackfillWindow, id = `${w.date}_${Date.now()}`,
+  folder: string, w: BackfillWindow, id = `${w.date}_${Date.now()}`, rel?: ReleaseLike,
 ): Promise<{ id: string; reqPath: string; donePath: string }> {
   await mkdir(folder, { recursive: true });
   const reqPath = join(folder, `${id}.req.json`);
   const donePath = join(folder, `${id}.done.json`);
-  await writeFile(reqPath, requestJson(w));
+  await writeFile(reqPath, requestJson(w, rel));
   return { id, reqPath, donePath };
 }
 
@@ -114,12 +152,38 @@ export type EnsureParams = {
   log?: (m: string) => void;
 };
 
+function setBackfillQuality(release: ReleaseLike, result: DoneResult & { requested?: boolean; ok: boolean }) {
+  release.dataQuality = {
+    ...(release.dataQuality ?? {}),
+    status: result.ok ? release.dataQuality?.status : 'DATA_GAP',
+    rowCounts: result.rowCounts ?? release.dataQuality?.rowCounts,
+    missingSymbols: result.missingSymbols ?? release.dataQuality?.missingSymbols,
+    contracts: result.contracts ?? release.contractMap ?? release.dataQuality?.contracts,
+    aggregation: result.aggregation ?? release.aggregation ?? 'SECOND1',
+    backfill: {
+      requested: result.requested ?? true,
+      ok: result.ok,
+      rows: result.rows,
+      file: result.file,
+      error: result.error,
+      missingSymbols: result.missingSymbols,
+    },
+    notes: [
+      ...(release.dataQuality?.notes ?? []),
+      result.ok
+        ? `History backfill returned ${result.rows} rows.`
+        : `History backfill failed or returned zero rows${result.error ? `: ${result.error}` : '.'}`,
+    ],
+  };
+}
+
 export async function ensureWindowTicks(p: EnsureParams): Promise<Tick[]> {
   const log = p.log ?? (() => {});
   const w = windowFromRelease(p.release);
   const symbols = p.release.assets.map(a => a.symbol);
+  const minRows = p.minRows ?? p.release.minRowsPerSymbol ?? 1;
   const covered = (ts: Tick[]) =>
-    hasCoverage(ts, { symbols, startTime: w.fromUtc, endTime: w.toUtc, minRows: p.minRows });
+    hasCoverage(ts, { symbols, startTime: w.fromUtc, endTime: w.toUtc, minRows });
 
   const ticks = p.initialTicks ?? await p.readTicks();
   if (covered(ticks)) return ticks;
@@ -131,12 +195,23 @@ export async function ensureWindowTicks(p: EnsureParams): Promise<Tick[]> {
 
   const folder = p.requestFolder ?? DEFAULT_REQUEST_FOLDER;
   log(`[backfill] tee window empty for [${symbols.join(',')}] ${w.fromUtc}..${w.toUtc} — requesting Quantower history backfill`);
-  const { donePath } = await writeRequest(folder, w);
+  const { donePath } = await writeRequest(folder, w, undefined, {
+    ...p.release,
+    symbols,
+    aggregation: p.release.aggregation ?? 'SECOND1',
+    minRowsPerSymbol: minRows,
+  });
   const done = await waitForDone(donePath, p.io, { timeoutMs: p.timeoutMs });
-  if (!done?.ok) {
-    log('[backfill] no backfill response (is QT_HistoryBackfill running with "Watch requests" on?) — proceeding with what we have');
+  if (!done?.ok || done.rows <= 0) {
+    setBackfillQuality(p.release, {
+      ...(done ?? { ok: false, rows: 0, error: 'no backfill response' }),
+      ok: false,
+      requested: true,
+    });
+    log('[backfill] no usable backfill rows (is QT_HistoryBackfill running with "Watch requests" on?) — proceeding with what we have');
     return ticks;
   }
+  setBackfillQuality(p.release, { ...done, requested: true });
   log(`[backfill] backfill wrote ${done.rows} rows → ${done.file}; re-reading window`);
   return p.readTicks();
 }

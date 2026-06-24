@@ -1,0 +1,8 @@
+# pnpm 11+ reads build-script approval here (it no longer reads package.json's
+# "pnpm" field). Vite needs esbuild's postinstall to place its platform binary;
+# without this, `corepack pnpm build` aborts at the install gate
+# (ERR_PNPM_IGNORED_BUILDS: esbuild).
+onlyBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: true

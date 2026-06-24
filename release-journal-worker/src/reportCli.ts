@@ -15,7 +15,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTickLog } from './marketRecorder.ts';
-import { hasCoverage, windowFromRelease, requestJson, writeRequest, DEFAULT_REQUEST_FOLDER } from './backfillRequest.ts';
+import { hasCoverage, windowFromRelease, writeRequest, DEFAULT_REQUEST_FOLDER } from './backfillRequest.ts';
 import { loadExpected } from './expectedBehavior.ts';
 import { runReleaseReview } from './runReleaseReview.ts';
 import { tickSizeFor } from './instruments.ts';
@@ -76,6 +76,18 @@ const decimalsFor = (ts: number) => { const s = String(ts); const i = s.indexOf(
 const movePts = (ticks: number | undefined, ts: number) => ticks == null ? '—' : ((ticks * ts >= 0 ? '+' : '') + (ticks * ts).toFixed(decimalsFor(ts)));
 const mins = (sec: number) => (sec >= 60 ? `${Math.round(sec / 60)}m` : `${sec}s`);
 const readAt = (leg: LegAnalysis | undefined, sec: number) => leg?.timedReads?.find(r => r.sec === sec)?.ticks;
+function tplus(sec?: number): string {
+  if (!Number.isFinite(sec)) return 'T+—';
+  const s = Math.max(0, Math.round(sec as number));
+  return `T+${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+function peakLabel(p?: { timestamp?: string; secondsFromRelease?: number; ticksFromEntry?: number }): string {
+  if (!p?.timestamp) return '—';
+  const bits = [p.timestamp];
+  if (Number.isFinite(p.secondsFromRelease)) bits.push(tplus(p.secondsFromRelease));
+  if (p.ticksFromEntry != null) bits.push(`${p.ticksFromEntry}t`);
+  return bits.join(' · ');
+}
 
 // True peak favorable excursion over the window + when it happened, and the heat
 // suffered before it — the numbers that matter for a 3-30 min hold.
@@ -109,6 +121,10 @@ function reportMarkdown(templateId: string, dateStr: string, exp: ReleaseExpecte
   }).join('\n');
 
   const adj = (res.review.suggestedAdjustments ?? []).map(a => `- **[${a.scope}] ${a.target}** (${a.confidence}): ${a.rationale}`).join('\n');
+  const exactPeaks = res.journal.trackedAssets
+    .filter(a => a.peaks?.peak1?.timestamp || a.peaks?.retrace1?.timestamp || a.peaks?.peak2?.timestamp)
+    .map(a => `| ${a.symbol}${a.contract ? ` (${a.contract})` : ''} | ${peakLabel(a.peaks?.peak1)} | ${peakLabel(a.peaks?.retrace1)} | ${peakLabel(a.peaks?.peak2)} |`)
+    .join('\n');
   return `# ${exp.title || templateId} — ${dateStr} ${exp.releaseTimeET || ''} ET\n\n`
     + `> Scorecard **${templateId}** · 1-second data, 3-30 min hold horizon · generated ${new Date().toISOString()}\n\n`
     + `**Headline:** ${c.overall.bestSymbolActualVsExpected ?? '—'}\n\n`
@@ -116,6 +132,9 @@ function reportMarkdown(templateId: string, dateStr: string, exp: ReleaseExpecte
     + `| Symbol | Expected | Hit | Peak | @ | MAE | Grade | Best entry |\n`
     + `|--------|----------|:--:|-----:|:--:|----:|:----:|------------|\n${verdict}\n\n`
     + `_Peak = best favorable excursion (points) in the expected direction; @ = minutes after the release; MAE = worst adverse heat first._\n\n`
+    + (exactPeaks
+      ? `## Exact peak timing\n\n| Symbol | Peak 1 | Retrace 1 | Peak 2 |\n|--------|--------|-----------|--------|\n${exactPeaks}\n\n`
+      : '')
     + `## Price path from release (points, + = up)\n\n`
     + `| Symbol | ${PATH_SECS.map(([, l]) => l).join(' | ')} |\n`
     + `|--------|${PATH_SECS.map(() => '----:').join('|')}|\n${pathRows}\n\n`
@@ -133,7 +152,7 @@ async function reportOne(templateId: string, dateStr: string): Promise<boolean> 
   const alertSyms = Object.entries(exp.perSymbol).filter(([, e]) => e.role === 'ALERT').map(([s]) => s);
 
   // Ask the always-on watcher for the window (1-second bars). Idempotent.
-  await writeRequest(DEFAULT_REQUEST_FOLDER, w, `${templateId}_${dateStr.replace(/-/g, '')}`);
+  await writeRequest(DEFAULT_REQUEST_FOLDER, w, `${templateId}_${dateStr.replace(/-/g, '')}`, config);
   const startTime = new Date(Date.parse(relIso) - PRE_ROLL_SEC * 1000).toISOString();
   const endTime = new Date(Date.parse(relIso) + HOLD_SEC * 1000).toISOString();
 

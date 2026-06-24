@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   X, FileText, BarChart3, Newspaper, Image as ImageIcon, Flag, AlertTriangle,
   Target, GitCompare, Lightbulb
@@ -5,6 +6,7 @@ import {
 import {
   gradeTone, relevanceTone, importanceTone, normalizeReleaseJournal
 } from '../utils/releaseJournalSchema';
+import { useStore } from '../store/useStore';
 
 // ── Small shared bits ───────────────────────────────────────────────────────
 const TONE = {
@@ -45,6 +47,19 @@ const fmtSec = (s) => (s == null ? '—' : `+${s}s`);
 const fmtTicks = (t) => (t == null ? '—' : `${t}t`);
 const fmtRR = (n) => (Number.isFinite(n) ? n.toFixed(1) : '—');
 const fmtNum = (v) => (v === '' || v == null ? '—' : v);
+const fmtMoney = (n) => (Number.isFinite(n) ? `$${n.toFixed(2)}` : '—');
+function fmtTPlus(seconds) {
+  if (!Number.isFinite(seconds)) return 'T+—';
+  const s = Math.max(0, Math.round(seconds));
+  return `T+${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+function fmtPeak(p) {
+  if (!p?.timestamp) return '—';
+  const bits = [fmtET(p.timestamp)];
+  if (Number.isFinite(p.secondsFromRelease)) bits.push(fmtTPlus(p.secondsFromRelease));
+  if (p.ticksFromEntry != null) bits.push(fmtTicks(p.ticksFromEntry));
+  return bits.join(' · ');
+}
 
 const directionTone = (d) =>
   d === 'LONG' ? 'green' : d === 'SHORT' ? 'red' : d === 'MIXED' ? 'yellow' : 'muted';
@@ -450,9 +465,223 @@ function AdjustmentsPanel({ adjustments }) {
   );
 }
 
+function ExecutionReviewPanel({ executionReview }) {
+  const trades = executionReview.trades || [];
+  return (
+    <div className="space-y-3">
+      {executionReview.summary && (
+        <div className="card p-3 text-xs text-text-primary leading-relaxed">
+          {executionReview.summary}
+        </div>
+      )}
+      {trades.length > 0 && (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="text-text-muted text-left border-b border-bg-border">
+                <th className="px-2 py-2 font-medium font-mono">Time</th>
+                <th className="px-2 py-2 font-medium font-mono">Symbol</th>
+                <th className="px-2 py-2 font-medium">Side</th>
+                <th className="px-2 py-2 font-medium text-right">Qty</th>
+                <th className="px-2 py-2 font-medium text-right">Entry</th>
+                <th className="px-2 py-2 font-medium text-right">Exit</th>
+                <th className="px-2 py-2 font-medium text-right">Duration</th>
+                <th className="px-2 py-2 font-medium text-right">P/L</th>
+                <th className="px-2 py-2 font-medium">Read</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trades.map((t, i) => (
+                <tr key={`${t.symbol}-${t.time}-${i}`} className="border-b border-bg-border/50 last:border-0 align-top">
+                  <td className="px-2 py-2 font-mono text-text-muted whitespace-nowrap">{t.time || '—'}</td>
+                  <td className="px-2 py-2 font-mono text-text-primary font-semibold">{t.symbol || t.ticker || '—'}</td>
+                  <td className="px-2 py-2"><Badge tone={t.side === 'Long' ? 'green' : t.side === 'Short' ? 'red' : 'muted'}>{t.side || '—'}</Badge></td>
+                  <td className="px-2 py-2 text-right font-mono text-text-secondary">{fmtNum(t.contracts)}</td>
+                  <td className="px-2 py-2 text-right font-mono text-text-secondary">{fmtNum(t.entry)}</td>
+                  <td className="px-2 py-2 text-right font-mono text-text-secondary">{fmtNum(t.exit)}</td>
+                  <td className="px-2 py-2 text-right font-mono text-text-secondary">{t.duration_sec == null ? '—' : `${t.duration_sec}s`}</td>
+                  <td className={`px-2 py-2 text-right font-mono ${(t.pnl || 0) >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>{fmtMoney(t.pnl)}</td>
+                  <td className="px-2 py-2 text-text-secondary max-w-[18rem]">
+                    <div>{t.review || '—'}</div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {t.release_match_confidence && <Badge tone="green" mono>linked {t.release_match_confidence}</Badge>}
+                      {t.trade_type === 'account_management' && <Badge tone="blue">account management</Badge>}
+                      {t.account_management_reason && <span className="text-[10px] text-text-muted">{t.account_management_reason}</span>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {(executionReview.mistakes?.length > 0 || executionReview.corrections?.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {executionReview.mistakes?.length > 0 && (
+            <div className="card p-3">
+              <div className="text-[10px] uppercase tracking-wider text-text-muted mb-2">Mistakes / risk flags</div>
+              <ul className="text-xs text-text-secondary leading-relaxed list-disc pl-4 space-y-1">
+                {executionReview.mistakes.map((m, i) => <li key={i}>{m}</li>)}
+              </ul>
+            </div>
+          )}
+          {executionReview.corrections?.length > 0 && (
+            <div className="card p-3">
+              <div className="text-[10px] uppercase tracking-wider text-text-muted mb-2">Corrections next time</div>
+              <ul className="text-xs text-text-secondary leading-relaxed list-disc pl-4 space-y-1">
+                {executionReview.corrections.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DataQualityPanel({ dataQuality }) {
+  if (!dataQuality) return null;
+  const status = dataQuality.status || 'OK';
+  const tone = status === 'DATA_GAP' ? 'red' : status === 'PARTIAL' ? 'yellow' : 'green';
+  const rowCounts = Object.entries(dataQuality.rowCounts || {});
+  const contracts = Object.entries(dataQuality.contracts || {});
+  return (
+    <div className="card p-3 space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge tone={tone} mono>{status}</Badge>
+        {dataQuality.aggregation && <Badge tone="muted" mono>{dataQuality.aggregation}</Badge>}
+        {dataQuality.backfill?.requested && (
+          <Badge tone={dataQuality.backfill.ok ? 'green' : 'yellow'}>backfill {dataQuality.backfill.ok ? 'ok' : 'needed'}</Badge>
+        )}
+      </div>
+      {dataQuality.notes?.length > 0 && (
+        <ul className="text-xs text-text-secondary leading-relaxed list-disc pl-4 space-y-1">
+          {dataQuality.notes.map((n, i) => <li key={i}>{n}</li>)}
+        </ul>
+      )}
+      {(dataQuality.missingSymbols?.length > 0 || dataQuality.backfill?.error) && (
+        <div className="text-xs text-accent-yellow">
+          {dataQuality.missingSymbols?.length > 0 ? `Missing: ${dataQuality.missingSymbols.join(', ')}` : ''}
+          {dataQuality.backfill?.error ? ` ${dataQuality.backfill.error}` : ''}
+        </div>
+      )}
+      {(rowCounts.length > 0 || contracts.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] font-mono">
+          {rowCounts.length > 0 && (
+            <div>
+              <div className="text-text-muted mb-1 font-sans uppercase tracking-wider text-[10px]">Rows by symbol</div>
+              <div className="flex flex-wrap gap-1.5">
+                {rowCounts.map(([sym, n]) => <Badge key={sym} tone={n > 0 ? 'muted' : 'red'} mono>{sym}:{n}</Badge>)}
+              </div>
+            </div>
+          )}
+          {contracts.length > 0 && (
+            <div>
+              <div className="text-text-muted mb-1 font-sans uppercase tracking-wider text-[10px]">Contracts</div>
+              <div className="flex flex-wrap gap-1.5">
+                {contracts.map(([sym, c]) => <Badge key={sym} tone="blue" mono>{sym}:{c}</Badge>)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PeakTimingPanel({ assets }) {
+  const rows = assets.filter(a => a.peaks?.peak1?.timestamp || a.peaks?.retrace1?.timestamp || a.peaks?.peak2?.timestamp);
+  if (!rows.length) return null;
+  return (
+    <div className="card overflow-x-auto">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="text-text-muted text-left border-b border-bg-border">
+            <th className="px-2 py-2 font-medium font-mono">Asset</th>
+            <th className="px-2 py-2 font-medium">Peak 1</th>
+            <th className="px-2 py-2 font-medium">Retrace 1</th>
+            <th className="px-2 py-2 font-medium">Peak 2</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a, i) => (
+            <tr key={`${a.symbol}-${i}`} className="border-b border-bg-border/50 last:border-0">
+              <td className="px-2 py-2 font-mono text-text-primary font-semibold">
+                {a.symbol}{a.contract ? <div className="text-[9px] text-text-muted">{a.contract}</div> : null}
+              </td>
+              <td className="px-2 py-2 text-text-secondary">{fmtPeak(a.peaks?.peak1)}</td>
+              <td className="px-2 py-2 text-text-secondary">{fmtPeak(a.peaks?.retrace1)}</td>
+              <td className="px-2 py-2 text-text-secondary">{fmtPeak(a.peaks?.peak2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const INTERVIEW_FIELDS = [
+  ['planVsActual', 'Plan vs actual'],
+  ['executionIssues', 'Execution issues'],
+  ['riskGuardContext', 'Risk Guard context'],
+  ['accountManagement', 'Account management'],
+  ['mistakes', 'Mistakes detected'],
+  ['corrections', 'Corrections next release'],
+  ['nextReleaseChanges', 'Setup changes'],
+];
+
+function PostReleaseInterviewPanel({ journal }) {
+  const updateReleaseJournal = useStore(s => s.updateReleaseJournal);
+  const [draft, setDraft] = useState(journal.postReleaseInterview || {});
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setDraft(journal.postReleaseInterview || {});
+    setSaved(false);
+  }, [journal.releaseId, journal.postReleaseInterview]);
+
+  function save() {
+    updateReleaseJournal(journal.releaseId, {
+      postReleaseInterview: { ...draft, reviewedAt: new Date().toISOString() },
+    });
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2500);
+  }
+
+  return (
+    <div className="card p-3 space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {INTERVIEW_FIELDS.map(([key, label]) => (
+          <label key={key} className="space-y-1">
+            <span className="text-[10px] uppercase tracking-wider text-text-muted">{label}</span>
+            <textarea
+              value={draft[key] || ''}
+              onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
+              rows={key === 'corrections' || key === 'nextReleaseChanges' ? 4 : 3}
+              className="w-full bg-bg border border-bg-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent-green/50 resize-y"
+            />
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] text-text-muted">
+          {journal.postReleaseInterview?.reviewedAt ? `Last saved ${fmtET(journal.postReleaseInterview.reviewedAt)}` : 'Interview answers are saved into this journal only.'}
+        </div>
+        <button
+          onClick={save}
+          className="px-3 py-1.5 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft"
+        >
+          {saved ? 'Saved' : 'Save interview'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Modal shell ──────────────────────────────────────────────────────────────
 export default function ReleaseReviewModal({ journal, onClose }) {
-  const j = normalizeReleaseJournal(journal);
+  const storedJournal = useStore(s => s.releaseJournals.find(x => x.releaseId === journal.releaseId));
+  const j = normalizeReleaseJournal(storedJournal || journal);
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-bg-card border border-bg-border rounded-lg w-full max-w-5xl max-h-[92vh] overflow-auto">
@@ -486,6 +715,12 @@ export default function ReleaseReviewModal({ journal, onClose }) {
             </div>
           )}
 
+          {j.dataQuality && (
+            <Section icon={AlertTriangle} title="Data quality">
+              <DataQualityPanel dataQuality={j.dataQuality} />
+            </Section>
+          )}
+
           <Section icon={FileText} title="Release numbers">
             <NumbersPanel numbers={j.numbers} />
           </Section>
@@ -495,6 +730,12 @@ export default function ReleaseReviewModal({ journal, onClose }) {
           }>
             <AssetTable assets={j.trackedAssets} />
           </Section>
+
+          {j.trackedAssets.some(a => a.peaks?.peak1?.timestamp || a.peaks?.retrace1?.timestamp || a.peaks?.peak2?.timestamp) && (
+            <Section icon={BarChart3} title="Peak timing">
+              <PeakTimingPanel assets={j.trackedAssets} />
+            </Section>
+          )}
 
           {j.expected && (
             <Section icon={Target} title="Expected (scorecard)" right={
@@ -509,6 +750,16 @@ export default function ReleaseReviewModal({ journal, onClose }) {
               <ComparisonPanel comparison={j.comparison} assets={j.trackedAssets} />
             </Section>
           )}
+
+          {j.executionReview && (
+            <Section icon={Flag} title="Execution review">
+              <ExecutionReviewPanel executionReview={j.executionReview} />
+            </Section>
+          )}
+
+          <Section icon={Flag} title="Post-release interview">
+            <PostReleaseInterviewPanel journal={j} />
+          </Section>
 
           {j.suggestedAdjustments?.length > 0 && (
             <Section icon={Lightbulb} title="Suggested adjustments" right={

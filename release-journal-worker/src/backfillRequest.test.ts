@@ -14,7 +14,7 @@ import {
 } from './backfillRequest.ts';
 import type { Tick } from './marketRecorder.ts';
 
-const REL = { scheduledTime: '2026-06-05T12:30:00.000Z', holdingWindowSec: 900, preRollSec: 60 };
+const REL = { releaseKey: 'US Jobs', scheduledTime: '2026-06-05T12:30:00.000Z', holdingWindowSec: 900, preRollSec: 60 };
 const tick = (symbol: string, t: string): Tick => ({ symbol, timestamp: t });
 
 test('windowFromRelease spans [release-preRoll, release+hold] with ET date', () => {
@@ -38,10 +38,28 @@ test('hasCoverage: true only when every symbol has a tick in-window', () => {
 
 test('request/done JSON round-trips', () => {
   const w = windowFromRelease(REL);
-  const o = JSON.parse(requestJson(w));
-  assert.deepEqual(o, { fromUtc: w.fromUtc, toUtc: w.toUtc, date: w.date });
-  assert.deepEqual(parseDone('{"ok":true,"rows":1234,"file":"ticks-2026-06-05.jsonl"}'),
-    { ok: true, rows: 1234, file: 'ticks-2026-06-05.jsonl' });
+  const o = JSON.parse(requestJson(w, {
+    ...REL,
+    assets: [{ symbol: 'NQ' }, { symbol: 'RTY' }],
+    contractMap: { NQ: 'NQM6', RTY: 'RTYM6' },
+    minRowsPerSymbol: 3,
+  }));
+  assert.deepEqual(o, {
+    releaseKey: 'US Jobs',
+    fromUtc: w.fromUtc,
+    toUtc: w.toUtc,
+    date: w.date,
+    symbols: ['NQ', 'RTY'],
+    contractMap: { NQ: 'NQM6', RTY: 'RTYM6' },
+    aggregation: 'SECOND1',
+    minRowsPerSymbol: 3,
+  });
+  const done = parseDone('{"ok":true,"rows":1234,"file":"ticks-2026-06-05.jsonl","rowCounts":{"NQ":600},"contracts":{"NQ":"NQM6"},"aggregation":"SECOND1"}');
+  assert.equal(done?.ok, true);
+  assert.equal(done?.rows, 1234);
+  assert.deepEqual(done?.rowCounts, { NQ: 600 });
+  assert.deepEqual(done?.contracts, { NQ: 'NQM6' });
+  assert.equal(done?.aggregation, 'SECOND1');
   assert.equal(parseDone('not json'), null);
 });
 
@@ -57,7 +75,14 @@ function simWorld(folder: string, opts: { fulfill: boolean; rows?: number; delay
         for (const f of await readdir(folder)) {
           if (!f.endsWith('.req.json')) continue;
           const done = join(folder, f.replace(/\.req\.json$/, '.done.json'));
-          await writeFile(done, JSON.stringify({ ok: true, rows: opts.rows ?? 10, file: 'ticks-2026-06-05.jsonl' }));
+          await writeFile(done, JSON.stringify({
+            ok: true,
+            rows: opts.rows ?? 10,
+            rowCounts: { NQ: opts.rows ?? 10 },
+            contracts: { NQ: 'NQM6' },
+            aggregation: 'SECOND1',
+            file: 'ticks-2026-06-05.backfill.jsonl',
+          }));
         }
       }
     },
@@ -68,12 +93,28 @@ function simWorld(folder: string, opts: { fulfill: boolean; rows?: number; delay
 test('writeRequest + waitForDone resolves when the strategy writes .done.json', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'bf-'));
   const w = windowFromRelease(REL);
-  const { reqPath, donePath } = await writeRequest(dir, w, 'job1');
+  const { reqPath, donePath } = await writeRequest(dir, w, 'job1', {
+    ...REL,
+    assets: [{ symbol: 'NQ' }],
+    contractMap: { NQ: 'NQM6' },
+  });
   assert.deepEqual(JSON.parse(await readFile(reqPath, 'utf8')),
-    { fromUtc: w.fromUtc, toUtc: w.toUtc, date: w.date });
+    {
+      releaseKey: 'US Jobs',
+      fromUtc: w.fromUtc,
+      toUtc: w.toUtc,
+      date: w.date,
+      symbols: ['NQ'],
+      contractMap: { NQ: 'NQM6' },
+      aggregation: 'SECOND1',
+      minRowsPerSymbol: 1,
+    });
   const io = simWorld(dir, { fulfill: true, rows: 42, delayTicks: 2 });
   const done = await waitForDone(donePath, io, { timeoutMs: 90_000, pollMs: 1500 });
-  assert.deepEqual(done, { ok: true, rows: 42, file: 'ticks-2026-06-05.jsonl' });
+  assert.equal(done?.ok, true);
+  assert.equal(done?.rows, 42);
+  assert.deepEqual(done?.rowCounts, { NQ: 42 });
+  assert.deepEqual(done?.contracts, { NQ: 'NQM6' });
 });
 
 test('waitForDone times out → null when nothing fulfills it', async () => {
@@ -109,4 +150,21 @@ test('ensureWindowTicks: empty window requests a backfill, then re-reads', async
   assert.equal(out.length, 2);                          // re-read returned the backfilled ticks
   assert.ok(call >= 2);                                 // it re-read after the backfill
   assert.ok((await readdir(dir)).some(f => f.endsWith('.req.json')));  // a request was written
+});
+
+test('ensureWindowTicks: zero-row done is treated as DATA_GAP and does not re-read as success', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'bf-'));
+  let call = 0;
+  const release = { ...REL, assets: [{ symbol: 'NQ' }], contractMap: { NQ: 'NQM6' } };
+  const out = await ensureWindowTicks({
+    release,
+    readTicks: async () => { call++; return []; },
+    requestFolder: dir,
+    io: simWorld(dir, { fulfill: true, rows: 0, delayTicks: 1 }),
+  });
+  assert.equal(out.length, 0);
+  assert.equal(call, 1);
+  assert.equal(release.dataQuality.status, 'DATA_GAP');
+  assert.equal(release.dataQuality.backfill.ok, false);
+  assert.equal(release.dataQuality.backfill.rows, 0);
 });

@@ -16,6 +16,7 @@
 // import time, by the modal — this module stays sync + side-effect-free).
 
 import { TICKERS } from './instruments';
+import { resolveCanonicalEventKey } from './events';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -362,18 +363,26 @@ function findDateSplitters(root) {
 
 // Slice a document body at date-header elements. Returns an array of drafts
 // (one per date section) or null if fewer than 2 date headers are found.
-function splitByDates(doc, body, images) {
+function pageTitle(doc, body) {
+  const titles = findTitleCandidates(body);
+  return (doc.title && doc.title.trim()) || (titles[0] && titles[0].textContent?.trim()) || '';
+}
+
+function splitByDates(doc, body, images, parentTitle = '') {
   const splitters = findDateSplitters(body);
   if (splitters.length < 2) return null;
   const drafts = [];
+  const canonical = resolveCanonicalEventKey(parentTitle, '');
   for (let i = 0; i < splitters.length; i++) {
     const range = doc.createRange();
     range.setStartBefore(splitters[i].el);
     if (i + 1 < splitters.length) range.setEndBefore(splitters[i + 1].el);
     else range.setEndAfter(body.lastChild || body);
     const frag = range.cloneContents();
-    const draft = mapPageToPlaybook(frag, images, splitters[i].text, 'dates');
+    const draft = mapPageToPlaybook(frag, images, parentTitle || splitters[i].text, 'dates');
     if (splitters[i].isoDate) draft.date = splitters[i].isoDate;
+    if (canonical) draft.event_key = canonical;
+    draft._meta = { ...draft._meta, dateHeader: splitters[i].text, parentTitle };
     drafts.push(draft);
   }
   return drafts;
@@ -387,7 +396,7 @@ export function splitPages(html, images) {
   if (!body) return [];
 
   // Prefer date-based splitting: each date header = one release.
-  const byDates = splitByDates(doc, body, images);
+  const byDates = splitByDates(doc, body, images, pageTitle(doc, body));
   if (byDates) return byDates;
 
   const titles = findTitleCandidates(body);
@@ -434,7 +443,7 @@ export function parseOneNoteMhtml(text, sourceName = '') {
       const doc = new DOMParser().parseFromString(part.html, 'text/html');
       const body = doc.body;
       if (!body) continue;
-      const byDates = splitByDates(doc, body, images);
+      const byDates = splitByDates(doc, body, images, pageTitle(doc, body));
       if (byDates && byDates.length >= 2) {
         drafts.push(...byDates);
       } else {

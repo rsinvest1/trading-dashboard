@@ -4,6 +4,8 @@ import { applyEvents } from '../utils/positionAggregator';
 import { tickerFromSymbol } from '../utils/instruments';
 import { extractImages, inlineImages, putImages, clearAllImages } from '../utils/imageStore';
 import { normalizeReleaseJournal } from '../utils/releaseJournalSchema';
+import { applyReleaseJournalImport } from '../utils/releaseAssociation';
+import { resolveCanonicalEventKey, isDateLikeEventKey } from '../utils/events';
 import { defaultDayGuard, guardStatus } from '../utils/dayGuard';
 import { currentSessionDate } from '../utils/calculations';
 
@@ -78,6 +80,16 @@ const DEFAULT_ACCOUNTS = [
     current_balance: 150000
   },
   {
+    id: 'tradeify-s2f-100k',
+    firm_name: 'Tradeify S2F $100k',
+    account_size: 100000,
+    trailing_drawdown_limit: 4000,
+    daily_loss_limit: 2500,
+    max_daily_profit: 1200,
+    eod_rule: true,
+    current_balance: 100000
+  },
+  {
     id: 'daytraders-sts-150k',
     firm_name: 'Daytraders.com Straight to Sim Funded EOD 150k',
     account_size: 150000,
@@ -130,13 +142,14 @@ function tradeDefaults() {
 // and only picks known fields (ignores transient draft fields like `_meta`).
 // Shared by addPlaybook (one) and addPlaybooks (batch / OneNote import).
 function playbookDefaults(p = {}) {
+  const eventKey = resolveCanonicalEventKey(p.event_key || '', '');
   return {
     id: uid(),
     title: p.title ?? '',
     date: p.date ?? new Date().toISOString().slice(0, 10),
     time: p.time ?? '',
     setup_name: p.setup_name ?? '',
-    event_key: p.event_key ?? null,   // links playbook to a recurring release event
+    event_key: eventKey && !isDateLikeEventKey(eventKey) ? eventKey : null,   // links playbook to a recurring release event
     instruments: p.instruments ?? [],
     catalysts: p.catalysts ?? [],
     context: p.context ?? '',
@@ -348,6 +361,36 @@ function migrateV9toV10(state) {
     },
     trades: (state?.trades || []).map(t => (t.release_id === undefined ? { ...t, release_id: null } : t))
   };
+}
+
+// ── Migration v10 → v11: seed Tradeify S2F $100k account for existing
+//    installs. Additive — appended only if not already present.
+function migrateV10toV11(state) {
+  const accounts = Array.isArray(state?.accounts) ? [...state.accounts] : [];
+  if (!accounts.some(a => a.id === 'tradeify-s2f-100k')) {
+    accounts.push({
+      id: 'tradeify-s2f-100k',
+      firm_name: 'Tradeify S2F $100k',
+      account_size: 100000,
+      trailing_drawdown_limit: 4000,
+      daily_loss_limit: 2500,
+      max_daily_profit: 1200,
+      eod_rule: true,
+      current_balance: 100000
+    });
+  }
+  return { ...state, accounts };
+}
+
+// ── Migration v11 → v12: apply Tradeify S2F $100k risk rules.
+//    Daily loss is $2,500; daily profit target/cap is $1,200 for 20% consistency.
+function migrateV11toV12(state) {
+  const accounts = Array.isArray(state?.accounts)
+    ? state.accounts.map(a => a.id === 'tradeify-s2f-100k'
+      ? { ...a, daily_loss_limit: 2500, max_daily_profit: 1200 }
+      : a)
+    : state?.accounts;
+  return { ...state, accounts };
 }
 
 export const useStore = create(
@@ -775,8 +818,9 @@ export const useStore = create(
 
       // Create an empty, first-class event key (shows as a 0-release group via meta).
       createEventKey: (key) => set((s) => {
-        const k = (key || '').trim();
+        const k = resolveCanonicalEventKey(key, '');
         if (!k) return {};
+        if (isDateLikeEventKey(k)) return {};
         const exists = s.playbookEventMeta[k] || s.playbooks.some(p => p.event_key === k);
         if (exists) return {};                      // no-op; UI navigates to the existing one
         return { playbookEventMeta: { ...s.playbookEventMeta, [k]: {} } };
@@ -784,8 +828,9 @@ export const useStore = create(
       // Rename a key across all releases + metadata. If `newKey` already exists this
       // MERGES (releases re-point to it; target meta wins on field collisions).
       renameEventKey: (oldKey, newKey) => set((s) => {
-        const from = (oldKey || '').trim(), to = (newKey || '').trim();
+        const from = (oldKey || '').trim(), to = resolveCanonicalEventKey(newKey, '');
         if (!from || !to || from === to) return {};
+        if (isDateLikeEventKey(to)) return {};
         const meta = { ...s.playbookEventMeta };
         meta[to] = { ...(meta[from] ?? {}), ...(meta[to] ?? {}) };
         delete meta[from];
@@ -813,6 +858,17 @@ export const useStore = create(
         const others = (s.releaseJournals || []).filter(x => x.releaseId !== norm.releaseId);
         return { releaseJournals: [...others, norm] };
       }),
+      importReleaseJournalPackage: (j) => {
+        const next = applyReleaseJournalImport(get(), j, { uid });
+        set(next.state);
+        return next.result;
+      },
+      updateReleaseJournal: (releaseId, patch) => set((s) => ({
+        releaseJournals: (s.releaseJournals || []).map(j =>
+          j.releaseId === releaseId
+            ? normalizeReleaseJournal({ ...j, ...patch, updatedAt: new Date().toISOString() })
+            : j)
+      })),
       deleteReleaseJournal: (releaseId) => set((s) => ({
         releaseJournals: (s.releaseJournals || []).filter(x => x.releaseId !== releaseId)
       })),
@@ -910,7 +966,7 @@ export const useStore = create(
     }),
     {
       name: 'trading-dashboard-v2',
-      version: 10,
+      version: 12,
       migrate: (persisted, fromVersion) => {
         let next = persisted || {};
         if (fromVersion < 1) next = migrateV0toV1(next);
@@ -923,6 +979,8 @@ export const useStore = create(
         if (fromVersion < 8) next = migrateV7toV8(next);
         if (fromVersion < 9) next = migrateV8toV9(next);
         if (fromVersion < 10) next = migrateV9toV10(next);
+        if (fromVersion < 11) next = migrateV10toV11(next);
+        if (fromVersion < 12) next = migrateV11toV12(next);
         return next;
       },
       // Flush images extracted during the v5→v6 migration into IndexedDB once

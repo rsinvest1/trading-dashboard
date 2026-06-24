@@ -167,11 +167,13 @@ export function aggregateFills(fills) {
  */
 export function defaultAccountMap(rawAccounts, accounts) {
   const map = {};
-  const tradeify   = accounts.find(a => /tradeify/i.test(a.firm_name));
+  const tradeifyS2f = accounts.find(a => a.id === 'tradeify-s2f-100k');
+  const tradeify   = accounts.find(a => a.id === 'tradeify-lf-150k') || accounts.find(a => /tradeify/i.test(a.firm_name));
   const daytraders = accounts.find(a => /daytraders/i.test(a.firm_name));
   const etf        = accounts.find(a => /elite trader/i.test(a.firm_name));
   for (const raw of rawAccounts) {
-    if (/^FRTL/i.test(raw) && tradeify)   map[raw] = tradeify.id;
+    if (/^FRTL100661824665$/i.test(raw) && tradeifyS2f) map[raw] = tradeifyS2f.id;
+    else if (/^FRTL/i.test(raw) && tradeify)   map[raw] = tradeify.id;
     else if (/^S2F-DT/i.test(raw) && daytraders) map[raw] = daytraders.id;
     else if ((/^tradovate$/i.test(raw) || /elite/i.test(raw) || /etf/i.test(raw)) && etf) map[raw] = etf.id;
     else map[raw] = accounts[0]?.id ?? null;

@@ -2,3 +2,25 @@ node_modules
 dist
 .DS_Store
 *.local
+
+# logs
+*.log
+
+# vite temp / dev artifacts
+vite.config.js.timestamp-*.mjs
+
+# local databases / vector store
+ruvector.db
+*.db
+
+# ── PERSONAL TRADING DATA — never commit (this repo is PUBLIC) ──
+# full localStorage exports (trades + playbooks)
+*trading-dashboard-backup-*.json
+# release-journal worker output (your journal packages)
+journal-data/
+release-journal-worker/journal-data/
+release-journal-worker/demo-output/
+
+# ephemeral per-release journal configs (working inputs, regenerated daily)
+release-journal-worker/*config*.json
+release-journal-worker/day-schedule-*.json

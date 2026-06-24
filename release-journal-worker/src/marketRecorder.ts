@@ -7,7 +7,7 @@
 // never touched.
 //
 // Tick-log format (the tee writes one JSON object per line, JSONL):
-//   {"t":"2026-05-29T14:00:00.000Z","sym":"RTY","last":2099.4,"bid":2099.3,"ask":2099.5}
+//   {"t":"2026-05-29T14:00:00.000Z","sym":"RTY","contract":"RTYU6","last":2099.4,"bid":2099.3,"ask":2099.5}
 //
 // This is NOT HFT: we down-sample to SNAPSHOT_INTERVAL_MS (last observation per
 // bucket), not raw tick-by-tick — entry is ~3 s post-release at best.
@@ -20,6 +20,7 @@ export const SNAPSHOT_INTERVAL_MS = 500;
 
 export type Tick = {
   symbol: string;
+  contract?: string;
   timestamp: string; // ISO8601
   bid?: number;
   ask?: number;
@@ -56,7 +57,7 @@ export function parseTickLog(text: string): Tick[] {
     const timestamp = o.t ?? o.timestamp;
     const symbol = o.sym ?? o.symbol;
     if (!timestamp || !symbol) continue;
-    out.push({ symbol, timestamp, bid: o.bid, ask: o.ask, mid: o.mid, last: o.last });
+    out.push({ symbol, contract: o.contract, timestamp, bid: o.bid, ask: o.ask, mid: o.mid, last: o.last });
   }
   return out;
 }

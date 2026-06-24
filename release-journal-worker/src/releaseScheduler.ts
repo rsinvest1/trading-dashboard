@@ -25,7 +25,7 @@ import { runReleaseReview } from './runReleaseReview.ts';
 export const DEFAULT_MACRO_SCORE_ROOT = 'C:\\RSInvest\\macro_score';
 const etDateOf = (ms: number) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
-export type ReleaseWithViews = ReleaseConfig & { views?: CaptureView[]; tickLog?: string; headlineLog?: string };
+export type ReleaseWithViews = ReleaseConfig & { views?: CaptureView[]; tickLog?: string; backfillLog?: string; headlineLog?: string };
 
 export type DaySchedule = { releases: ReleaseWithViews[]; baseDir?: string };
 
@@ -126,7 +126,12 @@ function liveReadTicks(rel: ReleaseWithViews): Promise<Tick[]> {
   const startTime = new Date(releaseMs - preRoll * 1000).toISOString();
   const endTime = new Date(releaseMs + holdSec * 1000).toISOString();
   const symbols = rel.assets.map(a => a.symbol);
-  return readTickLog(rel.tickLog).then(ticks => selectWindow(ticks, { symbols, startTime, endTime, snapshotIntervalMs: rel.snapshotIntervalMs }));
+  const backfillLog = rel.backfillLog ?? rel.tickLog.replace(/\.jsonl$/i, '.backfill.jsonl');
+  return Promise.all([
+    readTickLog(rel.tickLog).catch(() => []),
+    readTickLog(backfillLog).catch(() => []),
+  ]).then(([live, backfill]) =>
+    selectWindow([...live, ...backfill], { symbols, startTime, endTime, snapshotIntervalMs: rel.snapshotIntervalMs }));
 }
 
 // Read the FJ news tee's rolling headline log (defaults to journal-feed by ET date).

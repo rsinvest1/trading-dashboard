@@ -24,6 +24,7 @@ import type {
   ReleaseComparison,
   LegAnalysis,
   SuggestedAdjustment,
+  ReleaseDataQuality,
 } from '../schema/releaseJournalSchema';
 import type { ScreenshotType } from './capture.ts';
 
@@ -49,6 +50,7 @@ export type PackageScreenshot = {
 
 export type AssetConfig = {
   symbol: string;
+  contract?: string;           // exact futures month, e.g. NQU6
   role: ReleaseJournalAsset['role'];
   direction?: 'LONG' | 'SHORT' | 'NONE';
   source?: ReleaseJournalAsset['source'];
@@ -72,6 +74,9 @@ export type ReleaseConfig = {
   numbers?: ReleaseJournal['numbers'];
   headlines?: ReleaseJournalHeadline[];
   assets: AssetConfig[];
+  contractMap?: Record<string, string>;
+  requireContractMap?: boolean;
+  dataQuality?: ReleaseDataQuality;
   outputDir?: string;          // base dir for writePackage (default journal-data)
   // Phase 6: when set, the scheduler runs the scorecard ⇄ behavior review layer
   // (expected/comparison/adjustments) against the macro_score files for this event.
@@ -95,6 +100,48 @@ function etParts(iso: string) {
 const slug = (s: string) =>
   s.normalize('NFKD').replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);
 
+function computeDataQuality(config: ReleaseConfig, ticks: Tick[], startTime: string, endTime: string): ReleaseDataQuality {
+  const requiredSymbols = [...new Set(config.assets.map(a => a.symbol))];
+  const rowCounts: Record<string, number> = Object.fromEntries(requiredSymbols.map(s => [s, 0]));
+  const contracts: Record<string, string> = {};
+  const start = Date.parse(startTime);
+  const end = Date.parse(endTime);
+  for (const t of ticks) {
+    if (!(t.symbol in rowCounts)) continue;
+    const ms = Date.parse(t.timestamp);
+    if (!Number.isFinite(ms) || ms < start || ms > end) continue;
+    rowCounts[t.symbol]++;
+    if (t.contract && !contracts[t.symbol]) contracts[t.symbol] = t.contract;
+  }
+  for (const a of config.assets) {
+    const contract = a.contract ?? config.contractMap?.[a.symbol];
+    if (contract) contracts[a.symbol] = contract;
+  }
+  const missingSymbols = requiredSymbols.filter(s => (rowCounts[s] || 0) <= 0);
+  const missingContracts = config.requireContractMap
+    ? config.assets.filter(a => !a.contract && !config.contractMap?.[a.symbol]).map(a => a.symbol)
+    : [];
+  const notes = [
+    ...missingSymbols.map(s => `${s} has no market rows in the release window.`),
+    ...missingContracts.map(s => `${s} has no explicit contractMap entry on a rollover-sensitive release.`),
+  ];
+  const status: ReleaseDataQuality['status'] = missingContracts.length || missingSymbols.length === requiredSymbols.length
+    ? 'DATA_GAP'
+    : missingSymbols.length
+      ? 'PARTIAL'
+      : 'OK';
+  return {
+    status,
+    requiredSymbols,
+    rowCounts,
+    missingSymbols,
+    contracts,
+    aggregation: config.dataQuality?.aggregation ?? 'SECOND1',
+    backfill: config.dataQuality?.backfill,
+    notes,
+  };
+}
+
 // Build one ReleaseJournal from the config + the full tick set (+ optional
 // screenshots captured during the window). Asset-scoped screenshots attach to
 // their asset; global ones attach to the primary asset.
@@ -105,6 +152,14 @@ export function buildJournalPackage(config: ReleaseConfig, ticks: Tick[], screen
   const preRoll = config.preRollSec ?? 30;
   const startTime = new Date(Date.parse(releaseTime) - preRoll * 1000).toISOString();
   const endTime = new Date(Date.parse(releaseTime) + holdSec * 1000).toISOString();
+  const computedQuality = computeDataQuality(config, ticks, startTime, endTime);
+  const dataQuality: ReleaseDataQuality = {
+    ...computedQuality,
+    status: config.dataQuality?.status === 'DATA_GAP' ? 'DATA_GAP' : computedQuality.status,
+    backfill: config.dataQuality?.backfill ?? computedQuality.backfill,
+    notes: [...(computedQuality.notes ?? []), ...(config.dataQuality?.notes ?? [])],
+  };
+  const hasDataGap = dataQuality.status === 'DATA_GAP';
 
   // Group screenshots by asset; null-asset (global) ones held for the primary.
   const byAsset = new Map<string, ReleaseJournalScreenshot[]>();
@@ -128,6 +183,7 @@ export function buildJournalPackage(config: ReleaseConfig, ticks: Tick[], screen
 
     const base: ReleaseJournalAsset = {
       symbol: a.symbol,
+      contract: a.contract ?? config.contractMap?.[a.symbol] ?? dataQuality.contracts?.[a.symbol],
       role: a.role,
       source: a.source ?? 'RITHMIC',
       direction,
@@ -139,7 +195,7 @@ export function buildJournalPackage(config: ReleaseConfig, ticks: Tick[], screen
       notes: a.notes ?? '',
     };
 
-    if (direction === 'LONG' || direction === 'SHORT') {
+    if (!hasDataGap && (direction === 'LONG' || direction === 'SHORT')) {
       const r = analyze({
         symbol: a.symbol,
         direction,
@@ -153,7 +209,7 @@ export function buildJournalPackage(config: ReleaseConfig, ticks: Tick[], screen
       base.peaks = r.peaks;
       base.excursions = r.excursions;
       base.rr = r.rr;
-    } else {
+    } else if (!hasDataGap) {
       // Confirmation / observation-only asset: report range, no trade metrics.
       const prices = snaps.map(s => (typeof s.last === 'number' ? s.last
         : typeof s.mid === 'number' ? s.mid
@@ -187,10 +243,20 @@ export function buildJournalPackage(config: ReleaseConfig, ticks: Tick[], screen
   // Phase 5: grade each tradeable asset (writes `classification` in place) and
   // build the ranked, narrative summary the dashboard + Playbook rollup read.
   const newInfoHeadlineCount = finalHeadlines.filter(h => h.possibleNewInformationEvent).length;
-  const summary = gradeRelease(trackedAssets, {
-    newInfoHeadlineCount,
-    keyHeadlineInterference: newInfoHeadlineCount > 0,
-  });
+  const summary = hasDataGap
+    ? {
+        bestAsset: '',
+        secondBestAsset: '',
+        worstAsset: '',
+        bestHoldingStyle: 'NO_TRADE' as const,
+        keyHeadlineInterference: newInfoHeadlineCount > 0,
+        finalTakeaway: 'Signal-only package: market-data coverage is incomplete, so tradability grading was skipped.',
+        learningNote: (dataQuality.notes ?? []).join(' '),
+      }
+    : gradeRelease(trackedAssets, {
+        newInfoHeadlineCount,
+        keyHeadlineInterference: newInfoHeadlineCount > 0,
+      });
 
   return {
     releaseId: `${slug(config.releaseKey)}_${etParts(config.scheduledTime).date}_${etParts(config.scheduledTime).hm}`,
@@ -206,6 +272,7 @@ export function buildJournalPackage(config: ReleaseConfig, ticks: Tick[], screen
     trackedAssets,
     headlines: finalHeadlines,
     summary,
+    dataQuality,
     ...(review ? {
       templateId: review.templateId,
       expected: review.expected,
@@ -239,7 +306,7 @@ export async function writePackage(journal: ReleaseJournal, baseDir = 'journal-d
     const assetDir = join(dir, 'assets', a.symbol);
     await mkdir(assetDir, { recursive: true });
     await writeFile(join(assetDir, 'metrics.json'), JSON.stringify(
-      { symbol: a.symbol, role: a.role, direction: a.direction, entryModels: a.entryModels, peaks: a.peaks, excursions: a.excursions, rr: a.rr, classification: a.classification,
+      { symbol: a.symbol, contract: a.contract, role: a.role, direction: a.direction, entryModels: a.entryModels, peaks: a.peaks, excursions: a.excursions, rr: a.rr, classification: a.classification,
         expected: a.expected, legAnalysis: a.legAnalysis, comparison: a.comparison },
       null, 2));
   }
@@ -256,9 +323,13 @@ function summaryMarkdown(j: ReleaseJournal): string {
     + `${a.rr?.peak1Standard ?? '—'} / ${a.rr?.peak2Standard ?? '—'} | `
     + `${a.classification?.tradabilityGrade ?? '—'}${a.classification?.tradabilityScore != null ? ` (${a.classification.tradabilityScore})` : ''} |`).join('\n');
   const style = (j.summary.bestHoldingStyle || '').replace(/_/g, ' ');
+  const dataQuality = dataQualityMarkdown(j);
+  const peakTiming = peakTimingMarkdown(j);
   return `# ${j.releaseName} — ${j.scheduledTime}\n\n`
     + `**Release key:** ${j.releaseKey} · **Template:** ${j.releaseTemplate} · **Importance:** ${j.importance}\n\n`
     + `> Auto-generated by the Release Journal Worker (Phase 5 review engine).\n\n`
+    + dataQuality
+    + peakTiming
     + `## Asset metrics\n\n`
     + `| Asset | Role | Dir | P1 ticks | P2 ticks | MAE→P1 | R/R P1/P2 | Grade |\n`
     + `|-------|------|-----|---------:|---------:|-------:|:---------:|:-----:|\n${rows}\n\n`
@@ -266,6 +337,44 @@ function summaryMarkdown(j: ReleaseJournal): string {
     + (style ? `\n**Best holding style:** ${style}\n` : '')
     + (j.summary.learningNote ? `\n**Learning note:** ${j.summary.learningNote}\n` : '')
     + comparisonMarkdown(j);
+}
+
+function fmtTPlus(sec?: number): string {
+  if (!Number.isFinite(sec)) return 'T+—';
+  const s = Math.max(0, Math.round(sec as number));
+  return `T+${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function peakLabel(p?: { timestamp?: string; secondsFromRelease?: number; ticksFromEntry?: number }): string {
+  if (!p?.timestamp) return '—';
+  const bits = [p.timestamp];
+  if (Number.isFinite(p.secondsFromRelease)) bits.push(fmtTPlus(p.secondsFromRelease));
+  if (p.ticksFromEntry != null) bits.push(`${p.ticksFromEntry}t`);
+  return bits.join(' · ');
+}
+
+function peakTimingMarkdown(j: ReleaseJournal): string {
+  const rows = j.trackedAssets
+    .filter(a => a.peaks?.peak1?.timestamp || a.peaks?.retrace1?.timestamp || a.peaks?.peak2?.timestamp)
+    .map(a => `| ${a.symbol}${a.contract ? ` (${a.contract})` : ''} | ${peakLabel(a.peaks?.peak1)} | ${peakLabel(a.peaks?.retrace1)} | ${peakLabel(a.peaks?.peak2)} |`)
+    .join('\n');
+  if (!rows) return '';
+  return `## Peak timing\n\n`
+    + `| Asset | Peak 1 | Retrace 1 | Peak 2 |\n`
+    + `|-------|--------|-----------|--------|\n${rows}\n\n`;
+}
+
+function dataQualityMarkdown(j: ReleaseJournal): string {
+  if (!j.dataQuality) return '';
+  const dq = j.dataQuality;
+  const missing = dq.missingSymbols?.length ? ` · **Missing:** ${dq.missingSymbols.join(', ')}` : '';
+  const contracts = dq.contracts ? Object.entries(dq.contracts).map(([k, v]) => `${k}:${v}`).join(', ') : '';
+  const rows = dq.rowCounts ? Object.entries(dq.rowCounts).map(([k, v]) => `${k}:${v}`).join(', ') : '';
+  return `## Data quality\n\n`
+    + `**Status:** ${dq.status}${dq.aggregation ? ` · **Aggregation:** ${dq.aggregation}` : ''}${missing}\n\n`
+    + (contracts ? `**Contracts:** ${contracts}\n\n` : '')
+    + (rows ? `**Rows:** ${rows}\n\n` : '')
+    + (dq.notes?.length ? dq.notes.map(n => `- ${n}`).join('\n') + '\n\n' : '');
 }
 
 // Phase 6: expected-vs-actual block, only when the release carried a scorecard.

@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, ArrowLeft, Edit2, Trash2, X, ImagePlus, Calendar as CalIcon, Tag,
-  Newspaper, BookOpen, ClipboardPaste, Upload, FileText, Send
+  Newspaper, BookOpen, ClipboardPaste, Upload, FileText, Send, Flag
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { TICKERS } from '../utils/instruments';
 import { fmtMoney, fmtPct, fmtR, realizedR } from '../utils/calculations';
-import { EVENT_KEYS, normalizeEventKey } from '../utils/events';
+import {
+  CANONICAL_EVENT_KEYS,
+  normalizeEventKey,
+  isDateLikeEventKey,
+  resolveCanonicalEventKey,
+  eventGroupLabel
+} from '../utils/events';
 import { useImage, putImage, newImageId } from '../utils/imageStore';
 import OneNotePlaybookImporter from '../components/OneNotePlaybookImporter';
 import AutoJournalImporter from '../components/AutoJournalImporter';
@@ -133,8 +139,8 @@ function summarizeText(text, max = 420) {
 
 function buildMacroPrepExport({ playbooks, playbookEventMeta, releaseJournals, journalsByKey }) {
   const keys = new Set([
-    ...playbooks.map(p => p.event_key).filter(Boolean),
-    ...Object.keys(playbookEventMeta || {}),
+    ...playbooks.map(p => p.event_key).filter(k => k && !isDateLikeEventKey(k)),
+    ...Object.keys(playbookEventMeta || {}).filter(k => !isDateLikeEventKey(k)),
   ]);
 
   const events = [...keys].sort((a, b) => a.localeCompare(b)).map((eventKey) => {
@@ -360,6 +366,59 @@ function EventCard({ eventKey, rating, releases, auto, onClick, onDelete }) {
       >
         <Trash2 size={14} />
       </button>
+    </div>
+  );
+}
+
+function EventKeyAuditPanel({ rows, options, onMerge, onClose }) {
+  const [targets, setTargets] = useState(() =>
+    Object.fromEntries(rows.map(r => [r.key, r.suggestion || ''])));
+
+  useEffect(() => {
+    setTargets(Object.fromEntries(rows.map(r => [r.key, r.suggestion || ''])));
+  }, [rows]);
+
+  return (
+    <div className="card p-4 space-y-3 border-accent-yellow/40">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-text-primary">Event Key Audit</h2>
+          <p className="text-xs text-text-secondary mt-1">
+            Date-like keys are release instances. Merge them into the recurring scheduled Event Key before the next prep export.
+          </p>
+        </div>
+        <button onClick={onClose} className="text-text-muted hover:text-text-primary">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="space-y-2">
+        {rows.map(row => (
+          <div key={row.key} className="flex items-center gap-3 rounded border border-bg-border bg-bg/40 p-2">
+            <div className="flex-1 min-w-0">
+              <div className="font-mono text-xs text-accent-yellow truncate">{row.key}</div>
+              <div className="text-[11px] text-text-muted">
+                {row.count} release{row.count === 1 ? '' : 's'}
+                {row.sample ? ` · ${row.sample}` : ''}
+              </div>
+            </div>
+            <select
+              value={targets[row.key] || ''}
+              onChange={e => setTargets(t => ({ ...t, [row.key]: e.target.value }))}
+              className="bg-bg-card border border-bg-border rounded px-2 py-1.5 text-xs min-w-[15rem]"
+            >
+              <option value="">Choose canonical key</option>
+              {options.map(k => <option key={k} value={k}>{k}</option>)}
+            </select>
+            <button
+              disabled={!targets[row.key]}
+              onClick={() => onMerge(row.key, targets[row.key])}
+              className="px-3 py-1.5 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Apply
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -918,7 +977,7 @@ function ChartUploader({ charts, onChange }) {
   );
 }
 
-function PlaybookForm({ initial, onCancel, onSave, eventKeyOptions = EVENT_KEYS }) {
+function PlaybookForm({ initial, onCancel, onSave, eventKeyOptions = CANONICAL_EVENT_KEYS }) {
   const playbookEventMeta = useStore(s => s.playbookEventMeta);
   const setEventMeta      = useStore(s => s.setEventMeta);
 
@@ -958,7 +1017,9 @@ function PlaybookForm({ initial, onCancel, onSave, eventKeyOptions = EVENT_KEYS 
   }
 
   function submit() {
-    const ek = eventKey.trim() || null;
+    const rawKey = eventKey.trim();
+    const resolved = rawKey ? resolveCanonicalEventKey(rawKey, '') : '';
+    const ek = resolved && !isDateLikeEventKey(resolved) ? resolved : null;
     if (ek && rating.trim()) setEventMeta(ek, { rating: rating.trim() });
     // Pass initial?.id back so the parent knows whether this is an edit or a new
     // release — avoids any stale-closure issue with the parent's `editing` state.
@@ -1141,20 +1202,38 @@ export default function PlaybookPage() {
   const renameEventKey     = useStore(s => s.renameEventKey);
   const deleteEventKey     = useStore(s => s.deleteEventKey);
 
-  // Combined key list for all datalists: canonical + in-use + created/meta keys.
-  const allEventKeys = useMemo(() => {
-    const set = new Set(EVENT_KEYS);
-    for (const p of playbooks) if (p.event_key) set.add(p.event_key);
-    for (const k of Object.keys(playbookEventMeta)) set.add(k);
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [playbooks, playbookEventMeta]);
-
   // Imported auto-journal packages grouped by normalized event key, so each
   // EventCard can show its rollup (auto reviews, best asset, avg MAE / R-R …).
   const journalsByKey = useMemo(
     () => groupJournalsByEventKey(releaseJournals),
     [releaseJournals]
   );
+
+  // Auto-journal packages grouped by display label (folds legacy/drifted keys),
+  // so a card merged from two event_key variants still shows its auto rollup.
+  const journalsByGroup = useMemo(() => {
+    const out = {};
+    for (const j of releaseJournals || []) {
+      const g = eventGroupLabel(j.releaseKey);
+      if (!g) continue;
+      (out[g] ||= []).push(j);
+    }
+    return out;
+  }, [releaseJournals]);
+
+  // Event metadata (rating, next-release notes) merged by display label. The
+  // entry whose stored key already equals the label wins on field collisions.
+  const metaByGroup = useMemo(() => {
+    const out = {};
+    for (const [k, v] of Object.entries(playbookEventMeta)) {
+      const g = eventGroupLabel(k);
+      if (!g) continue;
+      const exact = k === g;
+      const cur = out[g] || {};
+      out[g] = exact ? { ...cur, ...v } : { ...v, ...cur };
+    }
+    return out;
+  }, [playbookEventMeta]);
 
   // Per-playbook performance from trades linked via playbook_id.
   const stats = useMemo(() => {
@@ -1182,8 +1261,37 @@ export default function PlaybookPage() {
   const [filter, setFilter]       = useState('');
   const [showImporter, setShowImporter] = useState(false);
   const [showAutoJournal, setShowAutoJournal] = useState(false);
+  const [showEventKeyAudit, setShowEventKeyAudit] = useState(false);
   const [creatingKey, setCreatingKey] = useState(false);
   const [macroExportStatus, setMacroExportStatus] = useState('');
+
+  // Combined key list for all datalists: canonical + non-date in-use + created/meta keys.
+  const allEventKeys = useMemo(() => {
+    const set = new Set(CANONICAL_EVENT_KEYS);
+    for (const p of playbooks) if (p.event_key && !isDateLikeEventKey(p.event_key)) set.add(p.event_key);
+    for (const k of Object.keys(playbookEventMeta)) if (!isDateLikeEventKey(k)) set.add(k);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [playbooks, playbookEventMeta]);
+
+  const eventKeyAuditRows = useMemo(() => {
+    const rows = new Map();
+    for (const p of playbooks) {
+      if (!isDateLikeEventKey(p.event_key)) continue;
+      const row = rows.get(p.event_key) || { key: p.event_key, count: 0, sample: '', suggestion: '' };
+      row.count++;
+      row.sample ||= p.title || p.setup_name || '';
+      row.suggestion ||= resolveCanonicalEventKey(`${p.title || ''} ${p.setup_name || ''} ${p.context || ''}`, '');
+      rows.set(p.event_key, row);
+    }
+    for (const k of Object.keys(playbookEventMeta)) {
+      if (!isDateLikeEventKey(k)) continue;
+      if (!rows.has(k)) rows.set(k, { key: k, count: 0, sample: 'empty event metadata', suggestion: '' });
+    }
+    return [...rows.values()].map(row => ({
+      ...row,
+      suggestion: row.suggestion && !isDateLikeEventKey(row.suggestion) ? row.suggestion : '',
+    }));
+  }, [playbooks, playbookEventMeta]);
 
   const sorted = useMemo(
     () => [...playbooks].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
@@ -1205,28 +1313,30 @@ export default function PlaybookPage() {
         (p.instruments || []).some(i => i.toLowerCase().includes(q)) ||
         (p.context || '').toLowerCase().includes(q);
       if (!matches) continue;
-      if (p.event_key) {
-        if (!keyed[p.event_key]) keyed[p.event_key] = [];
-        keyed[p.event_key].push(p);
+      if (p.event_key && !isDateLikeEventKey(p.event_key)) {
+        const gk = eventGroupLabel(p.event_key);
+        (keyed[gk] ||= []).push(p);
       } else {
         ung.push(p);
       }
     }
     // Surface created/empty event keys (no releases yet) as 0-release groups.
     for (const k of Object.keys(playbookEventMeta)) {
-      if (keyed[k]) continue;
-      if (!q || k.toLowerCase().includes(q)) keyed[k] = [];
+      if (isDateLikeEventKey(k)) continue;
+      const gk = eventGroupLabel(k);
+      if (keyed[gk]) continue;
+      if (!q || gk.toLowerCase().includes(q)) keyed[gk] = [];
     }
     return { groups: keyed, ungrouped: ung };
   }, [sorted, filter, playbookEventMeta]);
 
   const active = playbooks.find(p => p.id === activeId);
   const activeReleases = activeEventKey
-    ? sorted.filter(p => p.event_key === activeEventKey)
+    ? sorted.filter(p => p.event_key && eventGroupLabel(p.event_key) === activeEventKey)
     : [];
 
   function openEventDetail(key) {
-    setActiveEventKey(key);
+    setActiveEventKey(eventGroupLabel(key) || key);
     setView('event');
   }
 
@@ -1261,7 +1371,7 @@ export default function PlaybookPage() {
       addPlaybook({ ...data });
       const ek = data.event_key || activeEventKey;
       if (ek) {
-        setActiveEventKey(ek);
+        setActiveEventKey(eventGroupLabel(ek) || ek);
         setView('event');
       } else {
         setView('list');
@@ -1277,25 +1387,47 @@ export default function PlaybookPage() {
     setView(activeEventKey ? 'event' : 'list');
   }
 
-  // Confirm + delete an event key AND its release records. Returns whether it ran.
+  // Raw event_key strings (across playbooks + metadata) that fold into one card.
+  function constituentKeys(groupLabel) {
+    const set = new Set();
+    for (const p of playbooks) {
+      if (p.event_key && !isDateLikeEventKey(p.event_key) && eventGroupLabel(p.event_key) === groupLabel) {
+        set.add(p.event_key);
+      }
+    }
+    for (const k of Object.keys(playbookEventMeta)) {
+      if (!isDateLikeEventKey(k) && eventGroupLabel(k) === groupLabel) set.add(k);
+    }
+    return [...set];
+  }
+
+  // Confirm + delete an event card AND its release records. Operates on every raw
+  // key that folds into this card so merged duplicates are removed together.
   function confirmDeleteEventKey(key) {
-    const n = playbooks.filter(p => p.event_key === key).length;
+    const keys = constituentKeys(key);
+    const n = playbooks.filter(p => keys.includes(p.event_key)).length;
     const msg = n > 0
       ? `Delete event key "${key}" and its ${n} release${n === 1 ? '' : 's'}? `
         + `This permanently removes the release record${n === 1 ? '' : 's'}. `
         + `Linked trades keep their P&L but lose the playbook link.`
       : `Delete event key "${key}"?`;
     if (!confirm(msg)) return false;
-    deleteEventKey(key);
+    (keys.length ? keys : [key]).forEach(k => deleteEventKey(k));
     return true;
   }
 
   function handleCreateKey(name) {
-    const k = (name || '').trim();
+    const k = resolveCanonicalEventKey(name, '');
     setCreatingKey(false);
-    if (!k) return;
+    if (!k || isDateLikeEventKey(k)) return;
     createEventKey(k);          // no-op if it already exists
     openEventDetail(k);
+  }
+
+  function mergeAuditedEventKey(from, to) {
+    const target = resolveCanonicalEventKey(to, '');
+    if (!target || isDateLikeEventKey(target)) return;
+    renameEventKey(from, target);
   }
 
   function seedSample() { addPlaybook(SAMPLE_PLAYBOOK); }
@@ -1348,7 +1480,10 @@ export default function PlaybookPage() {
           onBack={() => activeEventKey ? setView('event') : setView('list')}
           onEdit={openEdit}
           onDelete={handleDelete}
-          onAssignEventKey={(val) => updatePlaybook(active.id, { event_key: val })}
+          onAssignEventKey={(val) => {
+            const target = val ? resolveCanonicalEventKey(val, '') : null;
+            updatePlaybook(active.id, { event_key: target && !isDateLikeEventKey(target) ? target : null });
+          }}
         />
       </div>
     );
@@ -1362,14 +1497,20 @@ export default function PlaybookPage() {
           key={activeEventKey}
           eventKey={activeEventKey}
           releases={activeReleases}
-          eventMeta={playbookEventMeta[activeEventKey]}
+          eventMeta={metaByGroup[activeEventKey]}
           eventKeyOptions={allEventKeys}
           onBack={() => setView('list')}
           onAddRelease={() => openNewRelease(activeEventKey)}
           onOpenRelease={id => openDetail(id, activeEventKey)}
           onRatingChange={r => setEventMeta(activeEventKey, { rating: r })}
           onNextNotesChange={notes => setEventMeta(activeEventKey, { nextReleaseNotes: notes })}
-          onRename={(newKey) => { renameEventKey(activeEventKey, newKey); setActiveEventKey(newKey); }}
+          onRename={(newKey) => {
+            const target = resolveCanonicalEventKey(newKey, '');
+            if (!target || isDateLikeEventKey(target)) return;
+            const keys = constituentKeys(activeEventKey);
+            (keys.length ? keys : [activeEventKey]).forEach(k => renameEventKey(k, target));
+            setActiveEventKey(eventGroupLabel(target) || target);
+          }}
           onDelete={() => { if (confirmDeleteEventKey(activeEventKey)) { setActiveEventKey(null); setView('list'); } }}
         />
       </div>
@@ -1409,6 +1550,14 @@ export default function PlaybookPage() {
           >
             <FileText size={14} /> Import Auto Journal
           </button>
+          {eventKeyAuditRows.length > 0 && (
+            <button
+              onClick={() => setShowEventKeyAudit(v => !v)}
+              className="flex items-center gap-1 px-3 py-2 text-sm border border-accent-yellow/40 text-accent-yellow hover:bg-accent-yellow/10 rounded"
+            >
+              <Flag size={14} /> Event Key Audit
+            </button>
+          )}
           <button
             onClick={() => setCreatingKey(true)}
             className="flex items-center gap-1 px-3 py-2 text-sm border border-bg-border text-text-secondary hover:text-text-primary rounded"
@@ -1445,6 +1594,15 @@ export default function PlaybookPage() {
       {showImporter && <OneNotePlaybookImporter onClose={() => setShowImporter(false)} />}
 
       {showAutoJournal && <AutoJournalImporter onClose={() => setShowAutoJournal(false)} />}
+
+      {showEventKeyAudit && eventKeyAuditRows.length > 0 && (
+        <EventKeyAuditPanel
+          rows={eventKeyAuditRows}
+          options={allEventKeys}
+          onMerge={mergeAuditedEventKey}
+          onClose={() => setShowEventKeyAudit(false)}
+        />
+      )}
 
       {hasAny && (
         <input
@@ -1489,9 +1647,9 @@ export default function PlaybookPage() {
                   <EventCard
                     key={key}
                     eventKey={key}
-                    rating={playbookEventMeta[key]?.rating}
+                    rating={metaByGroup[key]?.rating}
                     releases={releases}
-                    auto={summarizeJournals(journalsByKey[normalizeEventKey(key)])}
+                    auto={summarizeJournals(journalsByGroup[key])}
                     onClick={() => openEventDetail(key)}
                     onDelete={() => confirmDeleteEventKey(key)}
                   />

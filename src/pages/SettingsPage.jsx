@@ -198,10 +198,11 @@ function AccountRow({ account, onSave, onDelete }) {
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="font-medium">{account.firm_name}</div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-2 text-xs font-mono text-text-secondary">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-2 text-xs font-mono text-text-secondary">
               <div>Size <span className="text-text-primary">{fmtMoney(account.account_size)}</span></div>
               <div>Trail DD <span className="text-text-primary">{fmtMoney(account.trailing_drawdown_limit)}</span></div>
               <div>Daily Loss <span className="text-text-primary">{fmtMoney(account.daily_loss_limit)}</span></div>
+              <div>Max Profit <span className="text-text-primary">{fmtMoney(account.max_daily_profit)}</span></div>
               <div>Balance <span className="text-text-primary">{fmtMoney(account.current_balance)}</span></div>
               <div>EOD <span className="text-text-primary">{account.eod_rule ? 'Yes' : 'No'}</span></div>
             </div>
@@ -227,7 +228,7 @@ function AccountRow({ account, onSave, onDelete }) {
         placeholder="Firm name"
         className="w-full bg-bg border border-bg-border rounded px-3 py-2 text-sm font-medium focus:outline-none focus:border-accent-green/50"
       />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Account size</div>
           <NumberField value={draft.account_size} onChange={v => setDraft({ ...draft, account_size: v })} />
@@ -239,6 +240,10 @@ function AccountRow({ account, onSave, onDelete }) {
         <div>
           <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Daily loss limit</div>
           <NumberField value={draft.daily_loss_limit} onChange={v => setDraft({ ...draft, daily_loss_limit: v })} />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Max daily profit</div>
+          <NumberField value={draft.max_daily_profit} onChange={v => setDraft({ ...draft, max_daily_profit: v })} />
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Current balance</div>
@@ -339,6 +344,7 @@ export default function SettingsPage() {
       account_size: 50000,
       trailing_drawdown_limit: 2000,
       daily_loss_limit: 1500,
+      max_daily_profit: 0,
       eod_rule: false,
       current_balance: 50000
     });

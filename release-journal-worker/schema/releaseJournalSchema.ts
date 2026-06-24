@@ -57,6 +57,9 @@ export type ReleaseJournal = {
   trackedAssets: ReleaseJournalAsset[];
   headlines: ReleaseJournalHeadline[];
   summary: ReleaseJournalSummary;
+  dataQuality?: ReleaseDataQuality;
+  postReleaseInterview?: ReleasePostReleaseInterview;
+  executionReview?: ReleaseExecutionReview;
   // Phase 6: scorecard ⇄ behavior comparison. Present only when the release was
   // run with a macro_score templateId (the daily-prep scorecard for the event).
   templateId?: string;
@@ -69,6 +72,7 @@ export type ReleaseJournal = {
 
 export type ReleaseJournalAsset = {
   symbol: string;
+  contract?: string;           // resolved futures contract month, e.g. NQU6
   role: AssetRole;
   source?: 'RITHMIC' | 'QUANTOWER' | 'IG_CFD' | 'MANUAL' | 'UNKNOWN';
   direction?: 'LONG' | 'SHORT' | 'MIXED' | 'NONE';
@@ -169,6 +173,60 @@ export type ReleaseJournalSummary = {
   keyHeadlineInterference?: boolean;
   finalTakeaway: string;
   learningNote?: string;
+};
+
+export type ReleaseExecutionReview = {
+  summary?: string;
+  trades: Array<{
+    time?: string;
+    symbol?: string;
+    ticker?: string;
+    side?: 'Long' | 'Short' | string;
+    contracts?: number;
+    entry?: number;
+    exit?: number;
+    duration_sec?: number;
+    pnl?: number;
+    fees?: number;
+    account_id?: string;
+    linked_trade_id?: string;
+    release_match_confidence?: 'HIGH' | 'MEDIUM' | 'LOW' | string;
+    account_management_reason?: string;
+    trade_type?: string;
+    post_trade_state?: string;
+    review?: string;
+  }>;
+  mistakes?: string[];
+  corrections?: string[];
+};
+
+export type ReleaseDataQuality = {
+  status: 'OK' | 'PARTIAL' | 'DATA_GAP';
+  requiredSymbols?: string[];
+  rowCounts?: Record<string, number>;
+  missingSymbols?: string[];
+  contracts?: Record<string, string>;
+  aggregation?: 'SECOND1' | 'TICK' | string;
+  backfill?: {
+    requested?: boolean;
+    ok?: boolean;
+    rows?: number;
+    file?: string;
+    error?: string;
+    missingSymbols?: string[];
+  };
+  notes?: string[];
+};
+
+export type ReleasePostReleaseInterview = {
+  planVsActual?: string;
+  executionIssues?: string;
+  riskGuardContext?: string;
+  accountManagement?: string;
+  mistakes?: string;
+  corrections?: string;
+  nextReleaseChanges?: string;
+  reviewedAt?: string;
 };
 
 // ── Phase 6: scorecard ⇄ behavior comparison ─────────────────────────────────

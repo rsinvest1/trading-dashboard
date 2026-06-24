@@ -60,6 +60,7 @@ export const HOLDING_STYLES = [
 /**
  * @typedef {Object} ReleaseJournalAsset
  * @property {string} symbol
+ * @property {string} [contract]
  * @property {string} role           one of ASSET_ROLES
  * @property {string} [source]
  * @property {string} [direction]    LONG | SHORT | MIXED | NONE
@@ -82,6 +83,13 @@ export const HOLDING_STYLES = [
  * @property {string} [learningNote]
  */
 /**
+ * @typedef {Object} ReleaseExecutionReview
+ * @property {Array<Object>} trades
+ * @property {string} [summary]
+ * @property {string[]} [mistakes]
+ * @property {string[]} [corrections]
+ */
+/**
  * @typedef {Object} ReleaseJournal
  * @property {string} releaseId
  * @property {string} releaseKey
@@ -96,6 +104,9 @@ export const HOLDING_STYLES = [
  * @property {ReleaseJournalAsset[]} trackedAssets
  * @property {ReleaseJournalHeadline[]} headlines
  * @property {ReleaseJournalSummary} summary
+ * @property {Object} [dataQuality]
+ * @property {ReleaseExecutionReview} [executionReview]
+ * @property {Object} [postReleaseInterview]
  * @property {string} [createdAt]
  * @property {string} [updatedAt]
  */
@@ -145,6 +156,7 @@ export function normalizeReleaseJournal(raw) {
     },
     trackedAssets: trackedAssets.map(a => ({
       symbol: a?.symbol || '?',
+      contract: a?.contract || '',
       role: a?.role || 'SECONDARY',
       source: a?.source,
       direction: a?.direction || 'NONE',
@@ -176,6 +188,14 @@ export function normalizeReleaseJournal(raw) {
     expected: j.expected && typeof j.expected === 'object' ? j.expected : null,
     comparison: j.comparison && typeof j.comparison === 'object' ? j.comparison : null,
     suggestedAdjustments: Array.isArray(j.suggestedAdjustments) ? j.suggestedAdjustments : [],
+    executionReview: j.executionReview && typeof j.executionReview === 'object' ? {
+      trades: Array.isArray(j.executionReview.trades) ? j.executionReview.trades : [],
+      summary: j.executionReview.summary || '',
+      mistakes: Array.isArray(j.executionReview.mistakes) ? j.executionReview.mistakes : [],
+      corrections: Array.isArray(j.executionReview.corrections) ? j.executionReview.corrections : []
+    } : null,
+    dataQuality: j.dataQuality && typeof j.dataQuality === 'object' ? j.dataQuality : null,
+    postReleaseInterview: j.postReleaseInterview && typeof j.postReleaseInterview === 'object' ? j.postReleaseInterview : null,
     createdAt: j.createdAt || new Date().toISOString(),
     updatedAt: j.updatedAt || j.createdAt || new Date().toISOString()
   };

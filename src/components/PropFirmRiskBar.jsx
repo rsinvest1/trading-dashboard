@@ -14,6 +14,8 @@ function toneFor(pct) {
 export default function PropFirmRiskBar({ account, dailyPnL = 0 }) {
   const dailyUsed = dailyPnL < 0 ? -dailyPnL : 0;
   const dailyPct = pctOf(dailyUsed, account.daily_loss_limit);
+  const profitUsed = dailyPnL > 0 ? dailyPnL : 0;
+  const profitPct = pctOf(profitUsed, account.max_daily_profit);
 
   const drawdown = Math.max(0, account.account_size - account.current_balance);
   const ddPct = pctOf(drawdown, account.trailing_drawdown_limit);
@@ -38,6 +40,20 @@ export default function PropFirmRiskBar({ account, dailyPnL = 0 }) {
           <div className={`h-full ${toneFor(dailyPct)} transition-all`} style={{ width: `${dailyPct}%` }} />
         </div>
       </div>
+
+      {!!account.max_daily_profit && (
+        <div>
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-text-secondary">Daily profit consistency</span>
+            <span className="font-mono">
+              {fmtMoney(profitUsed)} / {fmtMoney(account.max_daily_profit)}
+            </span>
+          </div>
+          <div className="h-2 rounded bg-bg-hover overflow-hidden">
+            <div className={`h-full ${profitPct >= 100 ? 'bg-accent-yellow' : 'bg-accent-green'} transition-all`} style={{ width: `${profitPct}%` }} />
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="flex justify-between text-xs mb-1">

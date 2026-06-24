@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Upload, X, FileText, Eye, Trash2, Check, AlertCircle, Download } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { SAMPLE_RELEASE_JOURNALS } from '../utils/sampleReleaseJournals';
@@ -71,39 +71,145 @@ function JournalRow({ journal, imported, onView, onImport, onDelete }) {
   );
 }
 
+function RecentPackageRow({ pkg, imported, importing, onImport }) {
+  return (
+    <div className="card p-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-text-primary truncate">{pkg.releaseName}</span>
+          {pkg.releaseKey && <Badge tone="blue" mono>{pkg.releaseKey}</Badge>}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap text-[10px] text-text-muted mt-1">
+          {pkg.releaseId && <span className="font-mono truncate">{pkg.releaseId}</span>}
+          <span className="font-mono truncate">{pkg.slug}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        {imported
+          ? <span className="flex items-center gap-1 px-2.5 py-1 text-xs text-accent-green"><Check size={13} /> Imported</span>
+          : <button
+              onClick={onImport}
+              disabled={importing}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs bg-accent-green text-bg rounded font-medium hover:bg-accent-green-soft disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <Download size={13} /> {importing ? 'Importing' : 'Import'}
+            </button>
+        }
+      </div>
+    </div>
+  );
+}
+
 export default function AutoJournalImporter({ onClose }) {
   const releaseJournals     = useStore(s => s.releaseJournals);
   const addReleaseJournal   = useStore(s => s.addReleaseJournal);
+  const importReleaseJournalPackage = useStore(s => s.importReleaseJournalPackage);
   const deleteReleaseJournal = useStore(s => s.deleteReleaseJournal);
 
   const [viewing, setViewing] = useState(null);
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
+  const [recentPackages, setRecentPackages] = useState([]);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [recentError, setRecentError] = useState('');
+  const [importingPath, setImportingPath] = useState('');
 
   const importedIds = new Set((releaseJournals || []).map(j => j.releaseId));
+  const isDev = import.meta.env.DEV;
+
+  useEffect(() => {
+    if (!isDev) return;
+
+    let active = true;
+    async function loadRecentPackages() {
+      setRecentLoading(true);
+      setRecentError('');
+      try {
+        const res = await fetch('/api/dev/journals');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (active) setRecentPackages(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (active) setRecentError(e.message || 'Could not scan release journal packages');
+      } finally {
+        if (active) setRecentLoading(false);
+      }
+    }
+
+    loadRecentPackages();
+    return () => { active = false; };
+  }, [isDev]);
+
+  const recentGroups = [];
+  for (const pkg of recentPackages) {
+    let group = recentGroups[recentGroups.length - 1];
+    if (!group || group.date !== pkg.date) {
+      group = { date: pkg.date, packages: [] };
+      recentGroups.push(group);
+    }
+    group.packages.push(pkg);
+  }
+
+  function importPayload(raw, label) {
+    const list = Array.isArray(raw) ? raw : [raw];
+    const stats = { imported: 0, linkedTrades: 0, createdPlaybooks: 0 };
+    for (const item of list) {
+      if (!item || (!item.releaseKey && !item.releaseName)) {
+        setError(`${label}: not a release journal (missing releaseKey/releaseName).`);
+        continue;
+      }
+      const result = importReleaseJournalPackage(item);
+      stats.imported++;
+      stats.linkedTrades += result?.linkedTrades || 0;
+      if (result?.createdPlaybook) stats.createdPlaybooks++;
+    }
+    return stats;
+  }
+
+  function showImported(stats) {
+    const n = stats?.imported || 0;
+    if (!n) return;
+    const extras = [
+      stats.linkedTrades ? `${stats.linkedTrades} trade${stats.linkedTrades === 1 ? '' : 's'} linked` : '',
+      stats.createdPlaybooks ? `${stats.createdPlaybooks} release instance${stats.createdPlaybooks === 1 ? '' : 's'} created` : '',
+    ].filter(Boolean);
+    setFlash(`Imported ${n} package${n === 1 ? '' : 's'}${extras.length ? ` · ${extras.join(' · ')}` : ''}`);
+    setTimeout(() => setFlash(''), 3000);
+  }
 
   async function handleFiles(fileList) {
     setError('');
     const arr = [...fileList];
-    let n = 0;
+    const totals = { imported: 0, linkedTrades: 0, createdPlaybooks: 0 };
     for (const f of arr) {
       try {
         const text = await readFileText(f);
         const parsed = JSON.parse(text);
-        const list = Array.isArray(parsed) ? parsed : [parsed];
-        for (const raw of list) {
-          if (!raw || (!raw.releaseKey && !raw.releaseName)) {
-            setError(`${f.name}: not a release journal (missing releaseKey/releaseName).`);
-            continue;
-          }
-          addReleaseJournal(raw);
-          n++;
-        }
+        const stats = importPayload(parsed, f.name);
+        totals.imported += stats.imported;
+        totals.linkedTrades += stats.linkedTrades;
+        totals.createdPlaybooks += stats.createdPlaybooks;
       } catch (e) {
         setError(`${f.name}: ${e.message || 'invalid JSON'}`);
       }
     }
-    if (n) { setFlash(`Imported ${n} package${n === 1 ? '' : 's'}`); setTimeout(() => setFlash(''), 3000); }
+    showImported(totals);
+  }
+
+  async function handleRecentImport(pkg) {
+    setError('');
+    setImportingPath(pkg.path);
+    try {
+      const res = await fetch(`/api/dev/journals/metadata?path=${encodeURIComponent(pkg.path)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const parsed = await res.json();
+      const stats = importPayload(parsed, pkg.releaseName || pkg.slug || pkg.path);
+      showImported(stats);
+    } catch (e) {
+      setError(`${pkg.releaseName || pkg.slug}: ${e.message || 'could not import package'}`);
+    } finally {
+      setImportingPath('');
+    }
   }
 
   return (
@@ -148,6 +254,39 @@ export default function AutoJournalImporter({ onClose }) {
             {flash && (
               <div className="text-xs text-accent-green flex items-center gap-1.5">
                 <Check size={14} /> {flash}
+              </div>
+            )}
+
+            {isDev && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[10px] uppercase tracking-wider text-text-muted">Recent packages</div>
+                  {recentLoading && <div className="text-[10px] text-text-muted">Scanning...</div>}
+                </div>
+                {recentError && (
+                  <div className="text-xs text-accent-red flex items-start gap-2">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" /> <div>{recentError}</div>
+                  </div>
+                )}
+                {!recentLoading && !recentError && recentPackages.length === 0 && (
+                  <div className="text-xs text-text-muted border border-bg-border rounded p-3">
+                    No release journal packages found in the last 7 days.
+                  </div>
+                )}
+                {recentGroups.map(group => (
+                  <div key={group.date} className="space-y-1.5">
+                    <div className="text-[11px] text-text-secondary font-mono">{group.date}</div>
+                    {group.packages.map(pkg => (
+                      <RecentPackageRow
+                        key={pkg.path}
+                        pkg={pkg}
+                        imported={pkg.releaseId && importedIds.has(pkg.releaseId)}
+                        importing={importingPath === pkg.path}
+                        onImport={() => handleRecentImport(pkg)}
+                      />
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
 
