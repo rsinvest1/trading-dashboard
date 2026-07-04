@@ -1,0 +1,17 @@
+{
+  "name": "RSInvest Performance Cockpit",
+  "short_name": "Performance",
+  "start_url": "/performance",
+  "display": "standalone",
+  "background_color": "#070b11",
+  "theme_color": "#10b981",
+  "lang": "pt-PT",
+  "icons": [
+    {
+      "src": "/performance-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

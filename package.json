@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:performance": "vite --port 5185 --strictPort",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -18,10 +19,13 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "typescript": "^6.0.3",
     "vite": "^5.4.11"
   }
 }

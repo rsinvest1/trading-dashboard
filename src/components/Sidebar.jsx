@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, BookOpen, CalendarDays, ListOrdered, NotebookPen, Settings, TrendingUp, ListChecks
+  LayoutDashboard, BookOpen, CalendarDays, ListOrdered, NotebookPen, Settings, TrendingUp, ListChecks, Activity
 } from 'lucide-react';
 
 const links = [
@@ -10,6 +10,7 @@ const links = [
   { to: '/calendar',   label: 'Calendar',   Icon: CalendarDays },
   { to: '/trades',     label: 'Trade Log',  Icon: ListOrdered },
   { to: '/journal',    label: 'Journal',    Icon: NotebookPen },
+  { to: '/performance', label: 'Performance', Icon: Activity },
   { to: '/settings',   label: 'Settings',   Icon: Settings }
 ];
 
