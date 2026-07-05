@@ -15,11 +15,12 @@ import {
   RotateCcw,
   ShieldCheck,
   Snowflake,
-  Utensils
+  Utensils,
+  Zap
 } from 'lucide-react';
 import { usePerformanceData } from '../../hooks/performance/usePerformanceData';
 import { calculateScores, hydrationTarget } from '../../lib/performance/scoring';
-import type { DailyPerformance, HabitKey, Intensity, SnackType } from '../../lib/performance/types';
+import type { DailyPerformance, DrinkIngredient, HabitKey, Intensity, SnackType } from '../../lib/performance/types';
 import { Card, Progress, RangeField } from './PerformancePrimitives';
 
 const habitGroups: Array<{ title: string; icon: typeof Utensils; items: Array<[HabitKey, string]> }> = [
@@ -54,6 +55,14 @@ const intensityLabels: Record<Intensity, string> = {
   easy: 'Leve',
   moderate: 'Moderado',
   hard: 'Intenso'
+};
+
+const drinkIngredientLabels: Record<DrinkIngredient, string> = {
+  beetJuice: 'Sumo de beterraba',
+  lemon: 'Limão',
+  ginger: 'Gengibre',
+  cayenne: 'Caiena',
+  honey: 'Mel · opcional'
 };
 
 const readinessCopy = {
@@ -141,6 +150,93 @@ function HabitGrid({
           Rotação: espinafres · tomate · pimentos · courgette · cogumelos · leguminosas · salmão · frango
         </p>
       )}
+    </Card>
+  );
+}
+
+const hasPerformanceDrink = (day: DailyPerformance) =>
+  Object.values(day.performanceDrink.ingredients).some(Boolean);
+
+function DrinkRating({
+  label,
+  value,
+  onChange
+}: {
+  label: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 flex items-center justify-between text-[11px] text-slate-400">
+        {label}
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="rounded px-1 text-xs font-semibold tabular-nums text-slate-200 hover:text-slate-400"
+        >
+          {value === null ? '—' : `${value}/10`}
+        </button>
+      </span>
+      <input
+        className="h-7 w-full cursor-pointer accent-fuchsia-400"
+        type="range"
+        min="0"
+        max="10"
+        value={value ?? 0}
+        onChange={event => onChange(Number(event.target.value) || null)}
+      />
+    </label>
+  );
+}
+
+function PerformanceDrinkImpact({ history }: { history: Record<string, DailyPerformance> }) {
+  const days = useMemo(
+    () => Object.values(history).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30),
+    [history]
+  );
+  const withDrink = days.filter(hasPerformanceDrink);
+  const withoutDrink = days.filter(day => !hasPerformanceDrink(day));
+  const average = (values: Array<number | null>) => {
+    const rated = values.filter((value): value is number => value !== null);
+    return rated.length ? rated.reduce((sum, value) => sum + value, 0) / rated.length : null;
+  };
+  const metrics = [
+    ['Energia', (day: DailyPerformance) => day.energy],
+    ['Concentração', (day: DailyPerformance) => day.performanceDrink.concentration],
+    ['Exercise snacks', (day: DailyPerformance) => day.performanceDrink.exerciseSnackQuality],
+    ['Plano de trading', (day: DailyPerformance) => day.performanceDrink.tradingPlanExecution]
+  ] as const;
+
+  return (
+    <Card title="Impacto · últimos 30 dias" action={<History size={17} className="text-fuchsia-300" />}>
+      <div className="mb-3 flex gap-2 text-[10px]">
+        <span className="rounded-full bg-fuchsia-400/10 px-2.5 py-1 text-fuchsia-200">Com bebida {withDrink.length}</span>
+        <span className="rounded-full bg-slate-800 px-2.5 py-1 text-slate-400">Sem bebida {withoutDrink.length}</span>
+      </div>
+      <div className="mb-1 grid grid-cols-[1fr_auto_auto_auto] gap-3 px-3 text-[9px] uppercase tracking-wider text-slate-600">
+        <span>Métrica</span><span>Com</span><span>Sem</span><span className="text-right">Δ</span>
+      </div>
+      <div className="space-y-2">
+        {metrics.map(([label, getter]) => {
+          const withAverage = average(withDrink.map(getter));
+          const withoutAverage = average(withoutDrink.map(getter));
+          const delta = withAverage !== null && withoutAverage !== null ? withAverage - withoutAverage : null;
+          return (
+            <div key={label} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 rounded-xl bg-slate-950/50 px-3 py-2">
+              <span className="text-[11px] text-slate-400">{label}</span>
+              <span className="text-xs tabular-nums text-fuchsia-200">{withAverage === null ? '—' : withAverage.toFixed(1)}</span>
+              <span className="text-xs tabular-nums text-slate-500">{withoutAverage === null ? '—' : withoutAverage.toFixed(1)}</span>
+              <span className={`min-w-9 text-right text-xs font-semibold tabular-nums ${delta === null ? 'text-slate-600' : delta > 0 ? 'text-emerald-300' : delta < 0 ? 'text-red-300' : 'text-slate-400'}`}>
+                {delta === null ? '—' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+        Compara médias, não prova causalidade. Quanto mais dias registares, mais útil fica o sinal.
+      </p>
     </Card>
   );
 }
@@ -351,6 +447,90 @@ export default function PerformanceDashboard() {
           {habitGroups.map(group => (
             <HabitGrid key={group.title} {...group} day={day} toggleHabit={toggleHabit} />
           ))}
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <Card title="Performance Drink" action={<Zap size={18} className="text-fuchsia-300" />}>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {(Object.keys(drinkIngredientLabels) as DrinkIngredient[]).map(ingredient => {
+                const selected = day.performanceDrink.ingredients[ingredient];
+                return (
+                  <button
+                    key={ingredient}
+                    aria-pressed={selected}
+                    onClick={() => updateDay({
+                      performanceDrink: {
+                        ...day.performanceDrink,
+                        ingredients: {
+                          ...day.performanceDrink.ingredients,
+                          [ingredient]: !selected
+                        }
+                      }
+                    })}
+                    className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 text-left text-xs ${
+                      selected
+                        ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200'
+                        : 'border-slate-800 bg-slate-950/40 text-slate-400'
+                    }`}
+                  >
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md ${selected ? 'bg-fuchsia-400 text-slate-950' : 'bg-slate-800'}`}>
+                      {selected && <Check size={13} strokeWidth={3} />}
+                    </span>
+                    {drinkIngredientLabels[ingredient]}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {[
+                ['beforeUsSession', 'Antes da sessão US'],
+                ['beforeTraining', 'Antes do treino']
+              ].map(([key, label]) => {
+                const timingKey = key as 'beforeUsSession' | 'beforeTraining';
+                const selected = day.performanceDrink[timingKey];
+                return (
+                  <button
+                    key={key}
+                    aria-pressed={selected}
+                    disabled={!hasPerformanceDrink(day)}
+                    onClick={() => updateDay({
+                      performanceDrink: { ...day.performanceDrink, [timingKey]: !selected }
+                    })}
+                    className={`rounded-xl border px-3 py-2.5 text-xs disabled:opacity-35 ${
+                      selected ? 'border-fuchsia-400/40 bg-fuchsia-400/10 text-fuchsia-200' : 'border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-4 grid gap-2 border-t border-slate-800 pt-3 sm:grid-cols-3">
+              <DrinkRating
+                label="Concentração"
+                value={day.performanceDrink.concentration}
+                onChange={concentration => updateDay({
+                  performanceDrink: { ...day.performanceDrink, concentration }
+                })}
+              />
+              <DrinkRating
+                label="Qualidade dos snacks"
+                value={day.performanceDrink.exerciseSnackQuality}
+                onChange={exerciseSnackQuality => updateDay({
+                  performanceDrink: { ...day.performanceDrink, exerciseSnackQuality }
+                })}
+              />
+              <DrinkRating
+                label="Execução do plano"
+                value={day.performanceDrink.tradingPlanExecution}
+                onChange={tradingPlanExecution => updateDay({
+                  performanceDrink: { ...day.performanceDrink, tradingPlanExecution }
+                })}
+              />
+            </div>
+          </Card>
+
+          <PerformanceDrinkImpact history={history} />
         </div>
 
         <div className="grid gap-3 lg:grid-cols-2">

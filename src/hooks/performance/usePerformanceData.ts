@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createEmptyDay, createSeedHistory } from '../../lib/performance/seed';
+import { createEmptyDay, createSeedHistory, normalizeDay } from '../../lib/performance/seed';
 import type {
   DailyPerformance,
   ExerciseSnack,
@@ -15,7 +15,12 @@ const todayKey = () => new Date().toLocaleDateString('en-CA');
 const loadHistory = (): PerformanceHistory => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved) as PerformanceHistory;
+    if (saved) {
+      const parsed = JSON.parse(saved) as PerformanceHistory;
+      return Object.fromEntries(
+        Object.entries(parsed).map(([date, day]) => [date, normalizeDay(day, date)])
+      );
+    }
   } catch {
     // A fresh local dashboard is safer than blocking check-ins on invalid saved data.
   }

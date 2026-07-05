@@ -1,9 +1,11 @@
-import type { DailyPerformance, HabitKey, PerformanceHistory } from './types';
+import type { DailyPerformance, DrinkIngredient, HabitKey, PerformanceHistory } from './types';
 
 const habitKeys: HabitKey[] = [
   'lemonWater', 'electrolytes', 'matcha', 'kefir', 'nuts', 'eggs', 'sardines',
   'vegetables', 'fruit', 'creatine', 'multivitamin', 'nicotinamide', 'collagen', 'sunExposure'
 ];
+
+const drinkIngredients: DrinkIngredient[] = ['beetJuice', 'lemon', 'ginger', 'cayenne', 'honey'];
 
 const dateKey = (date: Date) => date.toLocaleDateString('en-CA');
 
@@ -20,8 +22,36 @@ export const createEmptyDay = (date = dateKey(new Date())): DailyPerformance => 
   energy: 7,
   caffeineStatus: 'ok',
   sauna: { completed: false, duration: 15, recoveryBenefit: 7 },
-  coldExposure: false
+  coldExposure: false,
+  performanceDrink: {
+    ingredients: Object.fromEntries(drinkIngredients.map(key => [key, false])) as Record<DrinkIngredient, boolean>,
+    beforeUsSession: false,
+    beforeTraining: false,
+    concentration: null,
+    exerciseSnackQuality: null,
+    tradingPlanExecution: null
+  }
 });
+
+export const normalizeDay = (saved: Partial<DailyPerformance>, date: string): DailyPerformance => {
+  const defaults = createEmptyDay(date);
+  return {
+    ...defaults,
+    ...saved,
+    date,
+    habits: { ...defaults.habits, ...saved.habits },
+    snacks: Array.isArray(saved.snacks) ? saved.snacks : [],
+    sauna: { ...defaults.sauna, ...saved.sauna },
+    performanceDrink: {
+      ...defaults.performanceDrink,
+      ...saved.performanceDrink,
+      ingredients: {
+        ...defaults.performanceDrink.ingredients,
+        ...saved.performanceDrink?.ingredients
+      }
+    }
+  };
+};
 
 export const createSeedHistory = (): PerformanceHistory => {
   const history: PerformanceHistory = {};
@@ -62,6 +92,20 @@ export const createSeedHistory = (): PerformanceHistory => {
     }));
     day.sauna.completed = offset === 2 || offset === 5;
     day.coldExposure = offset === 1 || offset === 4;
+    if (offset % 2 === 0) {
+      day.performanceDrink.ingredients = {
+        beetJuice: true,
+        lemon: true,
+        ginger: true,
+        cayenne: true,
+        honey: offset === 2
+      };
+      day.performanceDrink.beforeUsSession = true;
+      day.performanceDrink.beforeTraining = offset === 4;
+    }
+    day.performanceDrink.concentration = offset % 2 === 0 ? 8 : 6;
+    day.performanceDrink.exerciseSnackQuality = offset % 2 === 0 ? 8 : 7;
+    day.performanceDrink.tradingPlanExecution = offset % 2 === 0 ? 9 : 7;
     history[day.date] = day;
   }
 

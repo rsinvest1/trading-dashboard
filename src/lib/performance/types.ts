@@ -17,11 +17,21 @@ export type HabitKey =
 export type SnackType = 'push' | 'pull' | 'legs' | 'core' | 'mobility';
 export type Intensity = 'easy' | 'moderate' | 'hard';
 export type CaffeineStatus = 'ok' | 'high' | 'late';
+export type DrinkIngredient = 'beetJuice' | 'lemon' | 'ginger' | 'cayenne' | 'honey';
 
 export interface ExerciseSnack {
   id: string;
   type: SnackType;
   intensity: Intensity;
+}
+
+export interface PerformanceDrink {
+  ingredients: Record<DrinkIngredient, boolean>;
+  beforeUsSession: boolean;
+  beforeTraining: boolean;
+  concentration: number | null;
+  exerciseSnackQuality: number | null;
+  tradingPlanExecution: number | null;
 }
 
 export interface DailyPerformance {
@@ -42,6 +52,7 @@ export interface DailyPerformance {
     recoveryBenefit: number;
   };
   coldExposure: boolean;
+  performanceDrink: PerformanceDrink;
 }
 
 export type PerformanceHistory = Record<string, DailyPerformance>;
