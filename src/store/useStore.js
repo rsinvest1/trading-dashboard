@@ -69,6 +69,49 @@ function defaultTagCategories() {
   ];
 }
 
+// Accounts added 2026-07-08: LucidFlex 50K Flex Funded + Elite Trader Funding
+// 100K EOD Eval. Seeded into existing installs by migrateV12toV13 (additive,
+// id-guarded). Optional fields (profit_target, max_contracts, max_contracts_micros,
+// platform, drawdown_type, scaling_plan) are back-compatible — older accounts omit
+// them and the UI degrades gracefully.
+const NEW_ACCOUNTS_2026_07 = [
+  {
+    id: 'lucidflex-50k-flex',
+    firm_name: 'LucidFlex 50K Flex Funded',
+    account_size: 50000,
+    trailing_drawdown_limit: 2000,     // Max Loss Limit — EOD trailing
+    daily_loss_limit: 0,               // NONE (no daily loss limit)
+    eod_rule: true,
+    current_balance: 50000,
+    profit_target: null,               // Funded: no profit target (payout-based)
+    max_contracts: 4,                  // cap — minis
+    max_contracts_micros: 40,          // cap — micros
+    platform: 'NinjaTrader / Tradovate · TradingView',
+    drawdown_type: 'EOD trailing',
+    // Funded size scales with realized profit (Lucid 50K scaling plan).
+    // Each tier applies when realized profit >= `min`.
+    scaling_plan: [
+      { min: 0,    contracts: 2, micros: 20 },
+      { min: 1000, contracts: 3, micros: 30 },
+      { min: 2000, contracts: 4, micros: 40 }
+    ]
+  },
+  {
+    id: 'etf-100k-eod-eval',
+    firm_name: 'Elite Trader Funding 100K EOD Eval',
+    account_size: 100000,
+    trailing_drawdown_limit: 3500,     // Max Loss — End of Day Realized
+    daily_loss_limit: 2200,
+    eod_rule: true,
+    current_balance: 100000,
+    profit_target: 6000,
+    max_contracts: 14,                 // minis
+    max_contracts_micros: 140,
+    platform: '',
+    drawdown_type: 'EOD Realized'
+  }
+];
+
 const DEFAULT_ACCOUNTS = [
   {
     id: 'tradeify-lf-150k',
@@ -106,7 +149,8 @@ const DEFAULT_ACCOUNTS = [
     daily_loss_limit: 0,        // ETF has no daily loss limit — intraday trailing only
     eod_rule: false,            // INTRADAY trailing drawdown (not End-of-Day)
     current_balance: 250000
-  }
+  },
+  ...NEW_ACCOUNTS_2026_07
 ];
 
 // ── Per-trade defaults for new schema fields ────────────────────────────
@@ -390,6 +434,18 @@ function migrateV11toV12(state) {
       ? { ...a, daily_loss_limit: 2500, max_daily_profit: 1200 }
       : a)
     : state?.accounts;
+  return { ...state, accounts };
+}
+
+// ── Migration v12 → v13: seed LucidFlex 50K Flex Funded + Elite Trader Funding
+//    100K EOD Eval for existing installs (added 2026-07-08). Additive &
+//    id-guarded — each account is appended only if not already present.
+function migrateV12toV13(state) {
+  const accounts = Array.isArray(state?.accounts) ? [...state.accounts] : [];
+  const haveIds = new Set(accounts.map(a => a.id));
+  for (const a of NEW_ACCOUNTS_2026_07) {
+    if (!haveIds.has(a.id)) accounts.push({ ...a });
+  }
   return { ...state, accounts };
 }
 
@@ -966,7 +1022,7 @@ export const useStore = create(
     }),
     {
       name: 'trading-dashboard-v2',
-      version: 12,
+      version: 13,
       migrate: (persisted, fromVersion) => {
         let next = persisted || {};
         if (fromVersion < 1) next = migrateV0toV1(next);
@@ -981,6 +1037,7 @@ export const useStore = create(
         if (fromVersion < 10) next = migrateV9toV10(next);
         if (fromVersion < 11) next = migrateV10toV11(next);
         if (fromVersion < 12) next = migrateV11toV12(next);
+        if (fromVersion < 13) next = migrateV12toV13(next);
         return next;
       },
       // Flush images extracted during the v5→v6 migration into IndexedDB once

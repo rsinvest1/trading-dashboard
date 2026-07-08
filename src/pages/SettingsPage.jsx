@@ -198,12 +198,24 @@ function AccountRow({ account, onSave, onDelete }) {
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="font-medium">{account.firm_name}</div>
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-2 text-xs font-mono text-text-secondary">
+            {account.platform && (
+              <div className="text-[11px] text-text-muted mt-0.5">{account.platform}</div>
+            )}
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-x-3 gap-y-1.5 mt-2 text-xs font-mono text-text-secondary">
               <div>Size <span className="text-text-primary">{fmtMoney(account.account_size)}</span></div>
-              <div>Trail DD <span className="text-text-primary">{fmtMoney(account.trailing_drawdown_limit)}</span></div>
-              <div>Daily Loss <span className="text-text-primary">{fmtMoney(account.daily_loss_limit)}</span></div>
+              <div>{account.eod_rule ? 'DD (EOD)' : 'Trail DD'} <span className="text-text-primary">{fmtMoney(account.trailing_drawdown_limit)}</span></div>
+              <div>Daily Loss <span className="text-text-primary">{account.daily_loss_limit ? fmtMoney(account.daily_loss_limit) : '—'}</span></div>
               <div>Max Profit <span className="text-text-primary">{fmtMoney(account.max_daily_profit)}</span></div>
               <div>Balance <span className="text-text-primary">{fmtMoney(account.current_balance)}</span></div>
+              {account.profit_target != null && (
+                <div>Target <span className="text-text-primary">{fmtMoney(account.profit_target)}</span></div>
+              )}
+              {account.max_contracts != null && (
+                <div>Max <span className="text-text-primary">{account.max_contracts} mini{account.max_contracts_micros ? ` / ${account.max_contracts_micros} µ` : ''}</span></div>
+              )}
+              {Array.isArray(account.scaling_plan) && account.scaling_plan.length > 0 && (
+                <div>Scaling <span className="text-text-primary">{account.scaling_plan.map(t => t.contracts).join('/')} mini</span></div>
+              )}
               <div>EOD <span className="text-text-primary">{account.eod_rule ? 'Yes' : 'No'}</span></div>
             </div>
           </div>
@@ -234,7 +246,7 @@ function AccountRow({ account, onSave, onDelete }) {
           <NumberField value={draft.account_size} onChange={v => setDraft({ ...draft, account_size: v })} />
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Trail drawdown</div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Max drawdown</div>
           <NumberField value={draft.trailing_drawdown_limit} onChange={v => setDraft({ ...draft, trailing_drawdown_limit: v })} />
         </div>
         <div>
@@ -249,6 +261,38 @@ function AccountRow({ account, onSave, onDelete }) {
           <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Current balance</div>
           <NumberField value={draft.current_balance} onChange={v => setDraft({ ...draft, current_balance: v })} />
         </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Profit target</div>
+          <NumberField value={draft.profit_target} onChange={v => setDraft({ ...draft, profit_target: v })} />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Max contracts (minis)</div>
+          <NumberField prefix="" value={draft.max_contracts} onChange={v => setDraft({ ...draft, max_contracts: v })} />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Max contracts (micros)</div>
+          <NumberField prefix="" value={draft.max_contracts_micros} onChange={v => setDraft({ ...draft, max_contracts_micros: v })} />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Drawdown type</div>
+          <input
+            value={draft.drawdown_type ?? ''}
+            onChange={e => setDraft({ ...draft, drawdown_type: e.target.value })}
+            placeholder="e.g. EOD Realized"
+            className="w-full bg-bg border border-bg-border rounded px-2 py-1 text-sm focus:outline-none focus:border-accent-green/50"
+          />
+        </div>
+      </div>
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Platform</div>
+        <input
+          value={draft.platform ?? ''}
+          onChange={e => setDraft({ ...draft, platform: e.target.value })}
+          placeholder="e.g. NinjaTrader / Tradovate · TradingView"
+          className="w-full bg-bg border border-bg-border rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-green/50"
+        />
       </div>
       <label className="flex items-center gap-2 text-xs text-text-secondary">
         <input
@@ -346,7 +390,12 @@ export default function SettingsPage() {
       daily_loss_limit: 1500,
       max_daily_profit: 0,
       eod_rule: false,
-      current_balance: 50000
+      current_balance: 50000,
+      profit_target: null,
+      max_contracts: null,
+      max_contracts_micros: null,
+      platform: '',
+      drawdown_type: ''
     });
   }
 
