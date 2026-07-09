@@ -71,6 +71,12 @@ const readinessCopy = {
   red: { label: 'VERMELHO', text: 'Sem aumentar size · proteger capital', classes: 'bg-red-400/15 text-red-300 border-red-400/30' }
 };
 
+const readinessPhaseCopy = {
+  morning: 'Manhã · só cobra o essencial',
+  usSession: 'Sessão US · adaptado às 13:00',
+  endOfDay: 'Fim do dia · revisão completa'
+};
+
 const shortDate = (date: string) =>
   new Intl.DateTimeFormat('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })
     .format(new Date(`${date}T12:00:00`));
@@ -352,6 +358,7 @@ export default function PerformanceDashboard() {
                   <span className="text-xs font-bold">{readiness.label}</span>
                 </div>
                 <p className="mt-1 text-xs">{readiness.text}</p>
+                <p className="mt-2 text-[10px] font-medium opacity-75">{readinessPhaseCopy[scores.readinessPhase]}</p>
               </div>
               <Activity size={22} />
             </div>
@@ -390,6 +397,9 @@ export default function PerformanceDashboard() {
               </div>
               <span className="text-sm font-semibold text-sky-300">{scores.hydration}%</span>
             </div>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Meta base 2.5 L · calor/suor 3.0 L · calor + suor 3.5 L.
+            </p>
             <div className="mt-3"><Progress value={scores.hydration} color="bg-sky-400" /></div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {[250, 500, 750].map(amount => (

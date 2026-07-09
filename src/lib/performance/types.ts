@@ -18,6 +18,7 @@ export type SnackType = 'push' | 'pull' | 'legs' | 'core' | 'mobility';
 export type Intensity = 'easy' | 'moderate' | 'hard';
 export type CaffeineStatus = 'ok' | 'high' | 'late';
 export type DrinkIngredient = 'beetJuice' | 'lemon' | 'ginger' | 'cayenne' | 'honey';
+export type ReadinessPhase = 'morning' | 'usSession' | 'endOfDay';
 
 export interface ExerciseSnack {
   id: string;
@@ -67,4 +68,5 @@ export interface ScoreBreakdown {
   overall: number;
   tradingReadiness: number;
   readinessStatus: 'green' | 'yellow' | 'red';
+  readinessPhase: ReadinessPhase;
 }

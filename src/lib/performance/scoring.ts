@@ -1,9 +1,9 @@
-import type { DailyPerformance, ScoreBreakdown } from './types';
+import type { DailyPerformance, HabitKey, ReadinessPhase, ScoreBreakdown } from './types';
 
 const clamp = (value: number) => Math.round(Math.max(0, Math.min(100, value)));
 
 export const hydrationTarget = (day: DailyPerformance) =>
-  day.heatDay ? (day.highSweat ? 4000 : 3500) : 3000;
+  day.heatDay || day.highSweat ? (day.heatDay && day.highSweat ? 3500 : 3000) : 2500;
 
 export const hydrationScore = (day: DailyPerformance) =>
   clamp((day.waterMl / hydrationTarget(day)) * 100);
@@ -37,17 +37,50 @@ export const exposureScore = (day: DailyPerformance) => {
   return 50;
 };
 
-export const tradingReadinessScore = (day: DailyPerformance) => {
-  const exercise = Math.min(day.snacks.length / 4, 1) * 100;
+export const currentReadinessPhase = (date: string): ReadinessPhase => {
+  const today = new Date().toLocaleDateString('en-CA');
+  if (date !== today) return 'endOfDay';
+
+  const lisbonHour = Number(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Lisbon',
+      hour: '2-digit',
+      hour12: false
+    }).format(new Date())
+  );
+
+  if (lisbonHour < 13) return 'morning';
+  if (lisbonHour < 20) return 'usSession';
+  return 'endOfDay';
+};
+
+const readinessHydrationScore = (day: DailyPerformance, phase: ReadinessPhase) => {
+  const expectedFraction = phase === 'morning' ? 0.35 : phase === 'usSession' ? 0.5 : 1;
+  return clamp((day.waterMl / (hydrationTarget(day) * expectedFraction)) * 100);
+};
+
+const readinessExerciseScore = (day: DailyPerformance, phase: ReadinessPhase) => {
+  const expectedSnacks = phase === 'morning' ? 1 : phase === 'usSession' ? 2 : 4;
+  return clamp((day.snacks.length / expectedSnacks) * 100);
+};
+
+const readinessNutritionScore = (day: DailyPerformance, phase: ReadinessPhase) => {
+  const expected: HabitKey[] = phase === 'endOfDay'
+    ? ['kefir', 'nuts', 'eggs', 'sardines', 'vegetables', 'fruit']
+    : ['kefir', 'nuts', 'eggs', 'fruit'];
+  return clamp((expected.filter(key => day.habits[key]).length / expected.length) * 100);
+};
+
+export const tradingReadinessScore = (day: DailyPerformance, phase = currentReadinessPhase(day.date)) => {
   const caffeine = day.caffeineStatus === 'ok' ? 100 : day.caffeineStatus === 'high' ? 55 : 30;
   return clamp(
     day.sleepQuality * 2.5 +
-    hydrationScore(day) * 0.2 +
+    readinessHydrationScore(day, phase) * 0.2 +
     (10 - day.stress) * 2 +
     day.energy * 2 +
-    exercise * 0.05 +
+    readinessExerciseScore(day, phase) * 0.05 +
     caffeine * 0.05 +
-    nutritionScore(day) * 0.05
+    readinessNutritionScore(day, phase) * 0.05
   );
 };
 
@@ -58,7 +91,8 @@ export const calculateScores = (day: DailyPerformance): ScoreBreakdown => {
   const recovery = recoveryScore(day);
   const supplements = supplementScore(day);
   const exposure = exposureScore(day);
-  const tradingReadiness = tradingReadinessScore(day);
+  const readinessPhase = currentReadinessPhase(day.date);
+  const tradingReadiness = tradingReadinessScore(day, readinessPhase);
 
   return {
     hydration,
@@ -76,6 +110,7 @@ export const calculateScores = (day: DailyPerformance): ScoreBreakdown => {
       exposure * 0.05
     ),
     tradingReadiness,
-    readinessStatus: tradingReadiness >= 75 ? 'green' : tradingReadiness >= 55 ? 'yellow' : 'red'
+    readinessStatus: tradingReadiness >= 75 ? 'green' : tradingReadiness >= 55 ? 'yellow' : 'red',
+    readinessPhase
   };
 };
