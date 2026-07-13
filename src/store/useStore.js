@@ -449,6 +449,32 @@ function migrateV12toV13(state) {
   return { ...state, accounts };
 }
 
+// ── Migration v13 → v14: reconcile the two active accounts onto their
+//    canonical committed ids and hide the now-inactive ETF $250k account.
+//    Some installs seeded LucidFlex / ETF 100K EOD under interim ids
+//    (lucid-flex-50k / etf-100k-eod). Re-tag those trades onto the committed
+//    NEW_ACCOUNTS_2026_07 ids, drop the interim account rows, and flag
+//    ETF $250k hidden so it no longer shows on the dashboard risk panel.
+const ACCOUNT_ID_REMAP_V14 = {
+  'lucid-flex-50k': 'lucidflex-50k-flex',
+  'etf-100k-eod': 'etf-100k-eod-eval'
+};
+function migrateV13toV14(state) {
+  const trades = (state?.trades || []).map(t =>
+    ACCOUNT_ID_REMAP_V14[t.account_id]
+      ? { ...t, account_id: ACCOUNT_ID_REMAP_V14[t.account_id] }
+      : t
+  );
+  let accounts = Array.isArray(state?.accounts) ? [...state.accounts] : [];
+  accounts = accounts.filter(a => !ACCOUNT_ID_REMAP_V14[a.id]);
+  const haveIds = new Set(accounts.map(a => a.id));
+  for (const a of NEW_ACCOUNTS_2026_07) {
+    if (!haveIds.has(a.id)) accounts.push({ ...a });
+  }
+  accounts = accounts.map(a => a.id === 'etf-250k' ? { ...a, hidden: true } : a);
+  return { ...state, trades, accounts };
+}
+
 export const useStore = create(
   persist(
     (set, get) => ({
@@ -1022,7 +1048,7 @@ export const useStore = create(
     }),
     {
       name: 'trading-dashboard-v2',
-      version: 13,
+      version: 14,
       migrate: (persisted, fromVersion) => {
         let next = persisted || {};
         if (fromVersion < 1) next = migrateV0toV1(next);
@@ -1038,6 +1064,7 @@ export const useStore = create(
         if (fromVersion < 11) next = migrateV10toV11(next);
         if (fromVersion < 12) next = migrateV11toV12(next);
         if (fromVersion < 13) next = migrateV12toV13(next);
+        if (fromVersion < 14) next = migrateV13toV14(next);
         return next;
       },
       // Flush images extracted during the v5→v6 migration into IndexedDB once

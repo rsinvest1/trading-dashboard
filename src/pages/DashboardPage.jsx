@@ -146,7 +146,7 @@ export default function DashboardPage() {
       <section>
         <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Prop Firm Risk</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {accounts.map(acc => (
+          {accounts.filter(acc => !acc.hidden).map(acc => (
             <PropFirmRiskBar key={acc.id} account={acc} dailyPnL={dailyPnLByAccount[acc.id] || 0} />
           ))}
         </div>
