@@ -41,6 +41,18 @@ export default function DashboardPage() {
       .reduce((s, t) => s + (Number(t.pnl) || 0), 0),
     [trades, currentSession]
   );
+  // Per-account session P&L — each risk bar must reflect ITS OWN account,
+  // not the combined total (otherwise other accounts' profit surfaces on the
+  // one account that has a max_daily_profit cap).
+  const dailyPnLByAccount = useMemo(() => {
+    const map = {};
+    for (const t of trades) {
+      if (tradeSessionDate(t) === currentSession) {
+        map[t.account_id] = (map[t.account_id] || 0) + (Number(t.pnl) || 0);
+      }
+    }
+    return map;
+  }, [trades, currentSession]);
 
   const stats = useMemo(() => {
     const pnl = totalPnL(filtered);
@@ -135,7 +147,7 @@ export default function DashboardPage() {
         <h2 className="text-sm uppercase tracking-wider text-text-secondary mb-3">Prop Firm Risk</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {accounts.map(acc => (
-            <PropFirmRiskBar key={acc.id} account={acc} dailyPnL={todayPnL} />
+            <PropFirmRiskBar key={acc.id} account={acc} dailyPnL={dailyPnLByAccount[acc.id] || 0} />
           ))}
         </div>
       </section>
