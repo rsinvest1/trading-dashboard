@@ -148,5 +148,6 @@ export default defineConfig({
   plugins: [react(), devJournalDiscoveryPlugin()],
   // strictPort: never silently fall forward onto 5174 (the Macro Release Monitor)
   // -- that origin split is what makes trades "disappear" (localStorage is per-port).
-  server: { port: 5173, strictPort: true, open: true }
+  // Open test and working tabs explicitly in the existing Chrome Debug profile.
+  server: { port: 5173, strictPort: true, open: false }
 });
