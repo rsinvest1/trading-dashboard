@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { SAMPLE_RELEASE_JOURNALS } from '../utils/sampleReleaseJournals';
 import { normalizeReleaseJournal, importanceTone, gradeTone } from '../utils/releaseJournalSchema';
 import ReleaseReviewModal from './ReleaseReviewModal';
+import { emptyAutoJournalFilters, filterAutoJournals, journalDateET, journalSymbols } from '../utils/autoJournalFilters';
 
 const TONE = {
   green:  'bg-accent-green/10 text-accent-green border-accent-green/30',
@@ -42,6 +43,7 @@ function JournalRow({ journal, imported, onView, onImport, onDelete }) {
           <Badge tone="blue" mono>{journal.releaseKey}</Badge>
           <span className="font-mono">{journal.trackedAssets?.length || 0} assets</span>
           <span>{(journal.headlines?.length || 0)} headlines</span>
+          <span>{journalDateET(journal.scheduledTime) ? `${journalDateET(journal.scheduledTime)} ET` : 'Date unavailable'}</span>
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
@@ -100,7 +102,7 @@ function RecentPackageRow({ pkg, imported, importing, onImport }) {
   );
 }
 
-export default function AutoJournalImporter({ onClose }) {
+export default function AutoJournalImporter({ onClose, filters, setFilters }) {
   const releaseJournals     = useStore(s => s.releaseJournals);
   const addReleaseJournal   = useStore(s => s.addReleaseJournal);
   const importReleaseJournalPackage = useStore(s => s.importReleaseJournalPackage);
@@ -113,6 +115,11 @@ export default function AutoJournalImporter({ onClose }) {
   const [recentLoading, setRecentLoading] = useState(false);
   const [recentError, setRecentError] = useState('');
   const [importingPath, setImportingPath] = useState('');
+
+  const filteredJournals = filterAutoJournals(releaseJournals || [], filters);
+  const symbols = journalSymbols(releaseJournals || []);
+  const reversedDates = filters.from && filters.to && filters.from > filters.to;
+  const updateFilter = (key, value) => setFilters(current => ({ ...current, [key]: value }));
 
   const importedIds = new Set((releaseJournals || []).map(j => j.releaseId));
   const isDev = import.meta.env.DEV;
@@ -216,13 +223,78 @@ export default function AutoJournalImporter({ onClose }) {
     <>
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-4">
         <div className="bg-bg-card border border-bg-border rounded-lg w-full max-w-3xl max-h-[90vh] overflow-auto">
-          <div className="flex items-center justify-between p-4 border-b border-bg-border sticky top-0 bg-bg-card z-10">
+          <div className="sticky top-0 bg-bg-card z-10 border-b border-bg-border">
+          <div className="flex items-center justify-between p-4">
             <h2 className="font-semibold flex items-center gap-2">
               <FileText size={16} /> Import Auto Journal
             </h2>
-            <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
+            <button onClick={onClose} aria-label="Close auto journal" className="text-text-secondary hover:text-text-primary">
               <X size={18} />
             </button>
+          </div>
+
+          <div className="px-4 pb-4 space-y-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <label className="col-span-2 md:col-span-4">
+                Search
+                <input
+                  aria-label="Search imported journals"
+                  value={filters.search}
+                  onChange={e => updateFilter('search', e.target.value)}
+                  placeholder="Name, key, asset"
+                  className="w-full bg-bg-card border border-bg-border rounded px-2 py-1"
+                />
+              </label>
+              <label>
+                Symbol
+                <select
+                  aria-label="Instrument"
+                  value={filters.symbol}
+                  onChange={e => updateFilter('symbol', e.target.value)}
+                  className="w-full bg-bg-card border border-bg-border rounded px-2 py-1"
+                >
+                  <option value="">All symbols</option>
+                  {symbols.map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
+                </select>
+              </label>
+              <label>
+                Importance
+                <select
+                  aria-label="Importance"
+                  value={filters.importance}
+                  onChange={e => updateFilter('importance', e.target.value)}
+                  className="w-full bg-bg-card border border-bg-border rounded px-2 py-1"
+                >
+                  <option value="">All importance</option>
+                  {[['LOW', 'Low'], ['MEDIUM', 'Medium'], ['HIGH', 'High'], ['A_PLUS', 'A+']].map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                From (ET)
+                <input
+                  aria-label="From date (ET)"
+                  type="date"
+                  value={filters.from}
+                  onChange={e => updateFilter('from', e.target.value)}
+                  className="w-full bg-bg-card border border-bg-border rounded px-2 py-1"
+                />
+              </label>
+              <label>
+                To (ET)
+                <input
+                  aria-label="To date (ET)"
+                  type="date"
+                  value={filters.to}
+                  onChange={e => updateFilter('to', e.target.value)}
+                  className="w-full bg-bg-card border border-bg-border rounded px-2 py-1"
+                />
+              </label>
+            </div>
+            <div className="flex justify-between text-xs text-text-secondary"><span aria-live="polite">{filteredJournals.length} of {(releaseJournals || []).length} imported journals</span><button type="button" onClick={() => setFilters(emptyAutoJournalFilters)}>Clear filters</button></div>
+            {reversedDates && <div role="alert" className="text-xs text-accent-red">From date must be on or before To date.</div>}
+          </div>
           </div>
 
           <div className="p-4 space-y-5">
@@ -305,13 +377,14 @@ export default function AutoJournalImporter({ onClose }) {
             </div>
 
             {/* Imported journals */}
-            {releaseJournals.length > 0 && (
-              <div className="space-y-2">
+            <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-wider text-text-muted">
                   Imported journals ({releaseJournals.length})
                 </div>
-                {[...releaseJournals]
-                  .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+                {releaseJournals.length === 0
+                  ? <div className="text-xs text-text-muted">No imported journals yet.</div>
+                  : filteredJournals.length === 0 && <div className="text-xs text-text-muted">No imported journals match these filters.</div>}
+                {filteredJournals
                   .map(j => (
                     <JournalRow
                       key={j.releaseId}
@@ -320,8 +393,7 @@ export default function AutoJournalImporter({ onClose }) {
                       onDelete={() => deleteReleaseJournal(j.releaseId)}
                     />
                   ))}
-              </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
