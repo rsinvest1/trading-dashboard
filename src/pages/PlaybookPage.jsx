@@ -16,6 +16,7 @@ import {
 import { useImage, putImage, newImageId } from '../utils/imageStore';
 import OneNotePlaybookImporter from '../components/OneNotePlaybookImporter';
 import AutoJournalImporter from '../components/AutoJournalImporter';
+import { emptyAutoJournalFilters } from '../utils/autoJournalFilters';
 import { groupJournalsByEventKey, summarizeJournals, gradeTone } from '../utils/releaseJournalSchema';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -1261,6 +1262,7 @@ export default function PlaybookPage() {
   const [filter, setFilter]       = useState('');
   const [showImporter, setShowImporter] = useState(false);
   const [showAutoJournal, setShowAutoJournal] = useState(false);
+  const [autoJournalFilters, setAutoJournalFilters] = useState(emptyAutoJournalFilters);
   const [showEventKeyAudit, setShowEventKeyAudit] = useState(false);
   const [creatingKey, setCreatingKey] = useState(false);
   const [macroExportStatus, setMacroExportStatus] = useState('');
@@ -1593,7 +1595,7 @@ export default function PlaybookPage() {
 
       {showImporter && <OneNotePlaybookImporter onClose={() => setShowImporter(false)} />}
 
-      {showAutoJournal && <AutoJournalImporter onClose={() => setShowAutoJournal(false)} />}
+      {showAutoJournal && <AutoJournalImporter onClose={() => setShowAutoJournal(false)} filters={autoJournalFilters} setFilters={setAutoJournalFilters} />}
 
       {showEventKeyAudit && eventKeyAuditRows.length > 0 && (
         <EventKeyAuditPanel
